@@ -34,11 +34,27 @@ const workspaceRoot = process.env['A2A_WORKSPACE_ROOT']
 // task and must come back with tasks/get for the result.
 const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'block'
 
+// A bind failure throws out of the web carrier's activation and rejects the
+// whole composition — correct, but the raw EADDRINUSE stack buries the one fact
+// that matters, which is usually a server left over from a previous run.
 const app = await compose({
   port: PORT,
   workspaceRoot,
   peers: { alice: 'A2A_PEER_ALICE' },
   sendMode,
+}).catch((error: unknown) => {
+  if ((error as { code?: string })?.code === 'EADDRINUSE'
+    || String(error).includes('EADDRINUSE')) {
+    console.error(`Port ${PORT} is already in use — most likely an earlier run of this server.\n`)
+    console.error('  Pick another port:')
+    console.error('    bash:       A2A_PORT=9923 pnpm serve')
+    console.error('    PowerShell: $env:A2A_PORT = "9923"; pnpm serve\n')
+    console.error('  Or stop the old one:')
+    console.error('    bash:       pkill -f example/serve.ts')
+    console.error('    PowerShell: Get-Process node | Stop-Process')
+    process.exit(1)
+  }
+  throw error
 })
 
 const origin = `http://127.0.0.1:${app.port}`
