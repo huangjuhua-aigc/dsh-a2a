@@ -21,8 +21,9 @@ const token = process.env['A2A_PEER_ALICE']
 if (token === undefined || token.length === 0) {
   // Bind safety: with no credential configured there is nobody who could be
   // authenticated, so serving would only ever answer 401.
-  console.error('Set A2A_PEER_ALICE to a token before starting, e.g.')
-  console.error('  A2A_PEER_ALICE=$(openssl rand -hex 16) pnpm serve')
+  console.error('Set A2A_PEER_ALICE to a token before starting.\n')
+  console.error('  bash:       A2A_PEER_ALICE=demo123 pnpm serve')
+  console.error('  PowerShell: $env:A2A_PEER_ALICE = "demo123"; pnpm serve')
   process.exit(1)
 }
 
@@ -51,7 +52,7 @@ dsh-a2a listening on ${origin}
 
 Try it:
 
-  curl -s ${origin}/.well-known/agent-card.json
+  curl -s ${origin}/.well-known/agent-card.json      (PowerShell: curl.exe)
 
   curl -s ${origin}/a2a \\
     -H "authorization: Bearer $A2A_PEER_ALICE" \\

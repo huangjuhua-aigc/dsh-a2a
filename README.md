@@ -23,21 +23,54 @@ three are composed.
 ## Try it locally
 
 No API key required — the example composition mounts a stub echo adapter.
+`A2A_SEND_MODE=immediate` is what exercises the polling path: the peer gets a
+non-terminal task and must come back with `tasks/get` for the result.
+
+### bash / zsh
 
 ```sh
 pnpm install
-A2A_PEER_ALICE=$(openssl rand -hex 16) pnpm serve
+A2A_PEER_ALICE=demo123 A2A_PORT=9922 A2A_SEND_MODE=immediate pnpm serve
 ```
 
 ```sh
-curl -s http://127.0.0.1:9900/.well-known/agent-card.json
+curl -s http://127.0.0.1:9922/.well-known/agent-card.json
 
-curl -s http://127.0.0.1:9900/a2a \
-  -H "authorization: Bearer $A2A_PEER_ALICE" \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
+curl -s http://127.0.0.1:9922/a2a   -H "authorization: Bearer demo123"   -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
         "message":{"kind":"message","messageId":"m1","role":"user",
                    "parts":[{"kind":"text","text":"hello"}]}}}'
+```
+
+### PowerShell
+
+PowerShell has no `VAR=value cmd` prefix — set the variables first. And `curl`
+is an alias for `Invoke-WebRequest`, so call `curl.exe` explicitly or use
+`Invoke-RestMethod`.
+
+```powershell
+pnpm install
+$env:A2A_PEER_ALICE = "demo123"
+$env:A2A_PORT = "9922"
+$env:A2A_SEND_MODE = "immediate"
+pnpm serve
+```
+
+In a second terminal:
+
+```powershell
+curl.exe -s http://127.0.0.1:9922/.well-known/agent-card.json
+
+$h = @{ authorization = "Bearer demo123" }
+$body = '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}}'
+$sent = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' -Body $body
+$sent.result | ConvertTo-Json -Depth 5
+
+# The task is settled by now and its slot is gone; this answer comes from the
+# projection folded over the session log.
+$taskId = $sent.result.id
+$poll = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' `
+  -Body "{`"jsonrpc`":`"2.0`",`"id`":2,`"method`":`"tasks/get`",`"params`":{`"taskId`":`"$taskId`"}}"
+$poll.result | ConvertTo-Json -Depth 5
 ```
 
 ## What it serves
