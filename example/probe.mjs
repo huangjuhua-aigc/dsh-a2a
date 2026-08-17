@@ -7,12 +7,15 @@
  *   node example/probe.mjs [url] [token]
  *   node example/probe.mjs http://127.0.0.1:9922 demo123
  *
+ * The token is any peer's bearer credential; the peer's NAME does not matter
+ * here, only that the token authenticates.
+ *
  * Exits non-zero if anything answered differently than documented, so it works
  * as a smoke check against a real deployment, not only the demo.
  */
 
 const origin = (process.argv[2] ?? process.env.A2A_ORIGIN ?? 'http://127.0.0.1:9922').replace(/\/$/, '')
-const token = process.argv[3] ?? process.env.A2A_PEER_ALICE ?? 'demo123'
+const token = process.argv[3] ?? process.env.A2A_PROBE_TOKEN ?? 'demo123'
 
 const rpcUrl = `${origin}/a2a`
 const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
@@ -113,8 +116,8 @@ try {
   console.error(`Cannot reach ${origin}  (${cause ?? error})\n`)
   if (cause === 'ECONNREFUSED') {
     console.error('  Nothing is listening on that port. Start the server first:\n')
-    console.error('    bash:       A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve')
-    console.error('    PowerShell: $env:A2A_PEER_ALICE="demo123"; $env:A2A_PORT="9922"; pnpm serve\n')
+    console.error('    bash:       A2A_PEERS="alice:demo123" A2A_PORT=9922 pnpm serve')
+    console.error('    PowerShell: $env:A2A_PEERS="alice:demo123"; $env:A2A_PORT="9922"; pnpm serve\n')
     console.error('  Then probe the port it actually printed:\n')
     console.error('    node example/probe.mjs http://127.0.0.1:9922 demo123')
   }
