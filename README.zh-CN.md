@@ -6,7 +6,11 @@
   万物皆「插件」，它就是其中之一。
 </p>
 
-<p align="center"><sub>社区维护的插件，并非 DeepSeek 官方产品。中文 · <a href="README.md">English</a></sub></p>
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md"><b>简体中文</b></a>
+</p>
+
+<p align="center"><sub>社区维护的插件，并非 DeepSeek 官方产品。</sub></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
@@ -117,31 +121,6 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 
 认证、限流与信任门分别以 HTTP `401`、`429`、`403` 应答，响应体仍是合法的 JSON-RPC 错误
 信封。属于其他 peer 的任务，应答方式与不存在的任务完全一致。
-
-## 主要功能
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>可发现</h3>
-      <p>在 v0.3 的 well-known 路径提供动态 Agent Card，并同时保留 pre-0.3 路径供旧客户端使用。skills 由配置声明，而不是从运行时工具注册表投影，因此公开的 Card 不会带出已安装工具的清单。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>阻塞可协商</h3>
-      <p>A2A 是 async-first 的。<code>message/send</code> 是否等待逐请求决定：客户端的 <code>configuration.blocking</code> 优先，<code>sendMode</code> 是默认值，<code>blockTimeoutMs</code> 到时则以「返回非终态任务、任务继续执行」的方式拒绝继续等待。</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>任务状态持久</h3>
-      <p>每一次生命周期迁移都是一条 <code>a2a/task</code> session 事件，由 projection unit 折叠成 <code>tasks/get</code> 对外提供的读模型。终态那条边同时携带 agent 已提交的输出，因此轮询的 peer 拿到的是结果本身，而不只是状态。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Peer 隔离</h3>
-      <p>每个认证身份拥有独立的 context、独立的任务，默认还拥有独立的工作目录。跨会话工具按 <code>cwd</code> 精确相等授权，因此不同的工作目录借助 harness 中已有的机制天然隔离各个 peer。</p>
-    </td>
-  </tr>
-</table>
 
 ## 配置
 
@@ -321,6 +300,16 @@ pnpm build      # 产出 lib/
 
 harness 处于 pre-release 阶段，不承诺跨重命名或重新打包的兼容性，因此 peer 依赖精确锁定
 在 `0.1.0-rc.6`。
+
+## 社区交流
+
+扫码加入微信群 **A2A 产品应用和探索** —— 交流 A2A 的实际应用，也包括这个插件。
+
+<p align="center">
+  <img src="assets/community-wechat.jpg" alt="微信群二维码" width="280">
+</p>
+
+若二维码已过期，欢迎提 issue，我们会更新。
 
 ## 许可
 

@@ -6,7 +6,11 @@
   Everything is a plugin — this is one.
 </p>
 
-<p align="center"><sub>A community plugin, not an official DeepSeek product. English · <a href="README.zh-CN.md">中文</a></sub></p>
+<p align="center">
+  <a href="README.md"><b>English</b></a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center"><sub>A community plugin, not an official DeepSeek product.</sub></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
@@ -124,31 +128,6 @@ rendered into the model's context as bracketed references. Replies are text.
 Authentication, rate limiting, and the trust gate answer with HTTP `401`, `429`,
 and `403`; the body remains a valid JSON-RPC error envelope. A task belonging to
 another peer answers exactly as an absent one.
-
-## Features
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>Discovery</h3>
-      <p>A dynamic Agent Card at the v0.3 well-known path, plus the pre-0.3 path for older clients. Skills are declared in configuration rather than projected from the live tool registry, so the public card carries no inventory of installed tools.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Negotiated blocking</h3>
-      <p>A2A is async-first. Whether <code>message/send</code> waits is settled per request: the client's <code>configuration.blocking</code> wins, <code>sendMode</code> is the default, and <code>blockTimeoutMs</code> declines by answering with a non-terminal task that keeps running.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>Durable task state</h3>
-      <p>Every lifecycle transition is an <code>a2a/task</code> session event, folded by a projection unit into the read model <code>tasks/get</code> serves. The terminal edge carries the agent's committed output, so a polling peer receives the result and not only the state.</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Peer isolation</h3>
-      <p>Each authenticated identity gets its own context, its own tasks, and — by default — its own working directory. Cross-session tooling authorizes by exact <code>cwd</code> equality, so distinct workspaces isolate peers through the mechanism already in the harness.</p>
-    </td>
-  </tr>
-</table>
 
 ## Configuration
 
@@ -339,6 +318,17 @@ capability seams this plugin consumes. This project supplies:
 
 The harness is pre-release and does not promise compatibility across renames or
 repackaging, so peer dependencies are pinned exactly to `0.1.0-rc.6`.
+
+## Community
+
+Scan to join the WeChat group **A2A 产品应用和探索** — discussion of A2A in
+practice, this plugin included.
+
+<p align="center">
+  <img src="assets/community-wechat.jpg" alt="WeChat group QR code" width="280">
+</p>
+
+If the code has expired, open an issue and we will refresh it.
 
 ## License
 
