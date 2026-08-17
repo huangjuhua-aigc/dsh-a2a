@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><b>English</b></a> · <a href="README.zh-CN.md">简体中文</a>
+  <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/README.md"><b>English</b></a> · <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center"><sub>A community plugin, not an official DeepSeek product.</sub></p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
   <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 tests">
@@ -332,7 +332,7 @@ Scan to join the WeChat group **A2A 产品应用和探索** — discussion of A2
 practice, this plugin included.
 
 <p align="center">
-  <img src="assets/community-wechat.jpg" alt="WeChat group QR code" width="280">
+  <img src="https://raw.githubusercontent.com/huangjuhua-aigc/dsh-a2a/main/assets/community-wechat.jpg" alt="WeChat group QR code" width="280">
 </p>
 
 If the code has expired, open an issue and we will refresh it.

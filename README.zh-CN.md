@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md"><b>简体中文</b></a>
+  <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/README.md">English</a> · <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/README.zh-CN.md"><b>简体中文</b></a>
 </p>
 
 <p align="center"><sub>社区维护的插件，并非 DeepSeek 官方产品。</sub></p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm 版本"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC 绑定">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
   <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 项测试">
@@ -313,7 +313,7 @@ harness 处于 pre-release 阶段，不承诺跨重命名或重新打包的兼�
 扫码加入微信群 **A2A 产品应用和探索** —— 交流 A2A 的实际应用，也包括这个插件。
 
 <p align="center">
-  <img src="assets/community-wechat.jpg" alt="微信群二维码" width="280">
+  <img src="https://raw.githubusercontent.com/huangjuhua-aigc/dsh-a2a/main/assets/community-wechat.jpg" alt="微信群二维码" width="280">
 </p>
 
 若二维码已过期，欢迎提 issue，我们会更新。
