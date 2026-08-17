@@ -1,5 +1,7 @@
 # dsh-a2a
 
+English · [简体中文](README.zh-CN.md)
+
 Inbound [A2A (Agent2Agent)](https://a2a-protocol.org) protocol server for
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Publishes an
 Agent Card at a well-known URI and serves the **v0.3.0 JSON-RPC binding**, so any
@@ -13,9 +15,13 @@ capability seam.
 ## Install
 
 ```sh
-dsh plugin --profile web add dsh-a2a          # published package
-dsh plugin --profile web add ./path/to/dsh-a2a # local checkout
+dsh plugin --profile web add ./path/to/dsh-a2a   # local checkout
+dsh plugin --profile web add dsh-a2a             # once published
 ```
+
+> Not on npm yet. Use the local-checkout form; `npm pack` verifies the tarball
+> already carries `lib/` and `cordis.patch.yml`, so publishing is the only
+> remaining step.
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
 bundle to `dsh.profile.bundles`, because the package declares `dsh.bundle`.
@@ -127,12 +133,55 @@ real deployment.
 | `tasks/get` | ✅ idempotent, answers after settlement |
 | `tasks/cancel` | ✅ real cancellation, not just a dropped reply |
 | `tasks/resubscribe` | ✅ live task, or one terminal frame for a settled one |
-| `tasks/pushNotificationConfig/*` | ⛔ not implemented; card advertises `pushNotifications: false` |
+| `tasks/pushNotificationConfig/*` | ⛔ `-32003`; card advertises `pushNotifications: false` |
+| `tasks/list` · `ListTasks` | ⛔ `-32601`; v1.0-only, not served |
+| `agent/getAuthenticatedExtendedCard` | ⛔ `-32601`; no extended card |
 
 Both dialects are accepted: v0.3 (`message/send`, `"working"`, `kind`-tagged
 parts) is the mainline, and the v1.0 spellings (`SendMessage`,
 `TASK_STATE_WORKING`, member-presence parts) are normalized on the way in and
 rendered back in whichever dialect the request used.
+
+## How it works
+
+```
+src/
+├── protocol/          dependency-free library: no Cordis, no HTTP, no harness
+│   ├── wire.ts        the A2A vocabulary, normalized to v0.3 spelling
+│   ├── normalize.ts   v0.3 <-> v1.0 dialect translation, both directions
+│   ├── jsonrpc.ts     framing and the A2A error codes
+│   ├── card.ts        Agent Card construction
+│   └── sse.ts         SSE frame encoding
+├── index.ts           the Cordis plugin: wiring, agent ownership, teardown
+├── router.ts          HTTP + JSON-RPC dispatch, free of Cordis so it unit-tests
+├── contexts.ts        contextId -> Activation registry and residency policy
+├── tasks.ts           task slots and the three-stage turn correlation
+├── projection.ts      the a2aTask fold over the session log
+├── security.ts        authentication, rate limiting, defanging, redaction
+├── config.ts          schema plus the cross-field checks that fail at load
+└── types.ts           declaration merges into SessionEventMap / MessageSourceMap
+```
+
+Three decisions shape everything else:
+
+**A task is an interval, not a turn.** One submitted message may span several
+turns if tools queue more work, so settlement uses three hooks rather than one:
+`agent/inbox/claimed` binds the message to a turn, `turn/end` records that
+turn's ending, and `agent.whenIdle()` settles once the whole agent is quiet. A
+model error fails immediately; a token ceiling settles as `completed` with the
+real ending in `Task.metadata.dsh.stopReason`, because A2A's state enum cannot
+express it.
+
+**Task state lives in the session log.** Each lifecycle edge is an `a2a/task`
+event, and a projection unit folds them into the read model `tasks/get` serves.
+The terminal edge carries the agent's committed output too — the projection
+contract's whole-value rule — so a polling peer receives the answer and not just
+the fact that work finished.
+
+**HTTP has no connection lifetime, so residency is explicit.** Each `contextId`
+maps to an Activation that is evicted when idle, leaving the durable Session
+behind. This is the one place the design departs from `dsh-acp`, whose stdio
+connection owns its sessions.
 
 ## Configuration
 
@@ -142,8 +191,9 @@ rendered back in whichever dialect the request used.
   config:
     basePath: /a2a
     publicUrl: https://agents.example.com/a2a   # behind a reverse proxy
+    protocolVersion: 0.3.0    # advertised on the card
     provider: deepseek-official
-    model: deepseek-chat
+    model: deepseek-v4-flash
 
     card:
       name: dsh-harness
@@ -154,6 +204,9 @@ rendered back in whichever dialect the request used.
           name: general
           description: General-purpose task execution.
           tags: [coding, research]
+      provider:               # optional publisher attribution on the card
+        organization: Example Inc.
+        url: https://example.com
 
     # tokenEnv is a credential REFERENCE name, not a token. Values live in
     # ~/.dsh/.credentials.yaml or the process environment.
@@ -304,7 +357,8 @@ that path is not wired yet.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 129 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
+pnpm test          # 129 tests across 9 files: protocol, security, tasks, contexts,
+                   # projection, end-to-end, SSE, polling, blocking
 pnpm serve         # a real server on localhost
 ```
 
