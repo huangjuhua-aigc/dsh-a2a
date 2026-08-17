@@ -24,7 +24,16 @@ export interface PeerConfig {
   tokenEnv: string
 }
 
-/** How peers are kept from reaching each other. */
+/**
+ * How peers are kept from reaching each other.
+ *
+ * DEFERRED — a tool deny-list (`session_search`, `session_event_search`,
+ * `session_trace`, `session_event_trace`, `session_event_read`, `list_agents`)
+ * plus a named `unsafeAllowCrossSessionSearch` escape hatch for single-peer
+ * deployments. Both were designed as defense in depth behind `workspaceMode`,
+ * and neither is declared here until it is enforced: a security knob that
+ * silently does nothing is worse than no knob at all.
+ */
 export interface IsolationConfig {
   /**
    * `per-peer` gives each identity its own cwd, which also makes the existing
@@ -36,10 +45,6 @@ export interface IsolationConfig {
   workspaceRoot: string
   /** Per-peer cwd overrides, e.g. pointing one trusted peer at a real repo. */
   peerWorkspaces: Record<string, string>
-  /** Model-facing tools an A2A agent may never call. Additive only. */
-  deniedTools: string[]
-  /** Single-peer escape hatch for the cross-session search denial. */
-  unsafeAllowCrossSessionSearch: boolean
 }
 
 /** Agent Card content and exposure. */
@@ -52,12 +57,24 @@ export interface CardConfig {
   provider?: { organization: string; url: string }
 }
 
-/** Terminal-state webhook callbacks — the only egress this plugin makes. */
+/**
+ * Terminal-state webhook callbacks.
+ *
+ * Only `enabled` exists so far, and only to answer the push methods with the
+ * spec's own `PushNotificationNotSupported` and to keep the Agent Card honest.
+ *
+ * DEFERRED — the sender itself, plus its SSRF fence
+ * (`allowPrivateNetworkCallbacks`, `allowInsecureCallbacks`) and
+ * `requestTimeoutMs`. Those knobs arrive with the code that honors them; a
+ * deployment must not be able to set `allowPrivateNetworkCallbacks: false` and
+ * believe something is enforcing it.
+ */
 export interface PushConfig {
+  /**
+   * Reserved. Turning this on today only changes which error the push methods
+   * return, so it stays documented as unimplemented.
+   */
   enabled: boolean
-  allowPrivateNetworkCallbacks: boolean
-  allowInsecureCallbacks: boolean
-  requestTimeoutMs: number
 }
 
 /** The whole plugin configuration. */
@@ -80,23 +97,23 @@ export interface A2AServerConfig {
   maxContextTurns: number
   sendMode: 'block' | 'immediate'
   blockTimeoutMs: number
-  taskTimeoutMs: number
   contextIdleTtlMs: number
   maxResidentContexts: number
-  streamGranularity: 'message' | 'chunk'
   isolation: IsolationConfig
   push: PushConfig
 }
 
-/** Tools that can read another session; denied for A2A agents by default. */
-export const DEFAULT_DENIED_TOOLS: readonly string[] = [
-  'session_search',
-  'session_event_search',
-  'session_trace',
-  'session_event_trace',
-  'session_event_read',
-  'list_agents',
-]
+/*
+ * DEFERRED configuration, removed rather than left inert:
+ *
+ * - `streamGranularity: 'message' | 'chunk'` — streaming currently emits only
+ *   committed assistant messages. The `chunk` mode needs an `assistant/chunk`
+ *   subscription and a decision about retried text reaching a peer.
+ * - `taskTimeoutMs` — the orphan-task watchdog that would fail a task stuck
+ *   non-terminal. Nothing sweeps for those yet.
+ *
+ * Both were in the design; neither is wired. They return with their code.
+ */
 
 export const Config: Schema<A2AServerConfig> = Schema.object({
   basePath: Schema.string().default('/a2a'),
@@ -133,24 +150,17 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
 
   sendMode: Schema.union(['block', 'immediate'] as const).default('block'),
   blockTimeoutMs: Schema.natural().default(60_000),
-  taskTimeoutMs: Schema.natural().default(900_000),
   contextIdleTtlMs: Schema.natural().default(1_800_000),
   maxResidentContexts: Schema.natural().default(64),
-  streamGranularity: Schema.union(['message', 'chunk'] as const).default('message'),
 
   isolation: Schema.object({
     workspaceMode: Schema.union(['per-peer', 'shared'] as const).default('per-peer'),
     workspaceRoot: Schema.string().required(),
     peerWorkspaces: Schema.dict(Schema.string()).default({}),
-    deniedTools: Schema.array(Schema.string()).default([...DEFAULT_DENIED_TOOLS]),
-    unsafeAllowCrossSessionSearch: Schema.boolean().default(false),
   }).required(),
 
   push: Schema.object({
     enabled: Schema.boolean().default(false),
-    allowPrivateNetworkCallbacks: Schema.boolean().default(false),
-    allowInsecureCallbacks: Schema.boolean().default(false),
-    requestTimeoutMs: Schema.natural().default(10_000),
   }),
 })
 

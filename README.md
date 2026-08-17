@@ -13,12 +13,29 @@ capability seam.
 ## Install
 
 ```sh
-dsh plugin --profile <name> add dsh-a2a
+dsh plugin --profile web add dsh-a2a          # published package
+dsh plugin --profile web add ./path/to/dsh-a2a # local checkout
 ```
 
-Then configure the layer (see [Configuration](#configuration)). The plugin needs
-`ctx.agents`, `ctx.webServer`, and `ctx.credentials`; it stays PENDING until all
-three are composed.
+`dsh plugin` forwards to pnpm inside the profile directory and appends this
+bundle to `dsh.profile.bundles`, because the package declares `dsh.bundle`.
+Then configure the layer (see [Configuration](#configuration)).
+
+### Pick a profile that has an HTTP carrier
+
+The plugin injects `ctx.agents`, `ctx.webServer`, and `ctx.credentials`, and
+stays PENDING until all three exist. **`ctx.webServer` ships in `dsh-web-app`,
+not in `dsh-base`** — so on a `headless` profile this bundle loads and then sits
+there: nothing serves, and nothing errors, because a PENDING fiber is a normal
+Cordis state rather than a failure.
+
+| Profile | Result |
+|---|---|
+| `web` | works |
+| `headless` | PENDING — mount `@deepseek-ai/dsh-host-webserver` first |
+
+`dsh --profile <name> --dump-config` prints the composed rows, which is the
+quickest way to confirm the carrier is there.
 
 ## Try it locally
 
@@ -145,8 +162,26 @@ rendered back in whichever dialect the request used.
 
     isolation:
       workspaceMode: per-peer # per-peer (default) | shared
-      workspaceRoot: /srv/dsh/a2a
+      workspaceRoot: /srv/dsh/a2a   # required, no default
+      peerWorkspaces:               # optional per-peer override
+        alice: /srv/project
+
+    push:
+      enabled: false          # reserved; see Known limitations
 ```
+
+Every field above is read by the code. Nothing is accepted that is not
+enforced — the deny-list, stream granularity, task-timeout and SSRF knobs from
+the design are absent until their implementations land, so a deployment cannot
+set a security option and believe something honors it.
+
+### Refused at load
+
+- `isolation.workspaceRoot` is required
+- peer names must match `[A-Za-z0-9][A-Za-z0-9_-]*` (they become directory names)
+- `tokenEnv` must be a POSIX identifier, so a pasted token is rejected
+- `trustedPeers` and `peerWorkspaces` may only name declared peers
+- `basePath` must start with `/`
 
 ### Credentials
 
@@ -223,6 +258,13 @@ that path is not wired yet.
 - A token ceiling settles a task as `completed`, not a distinct state; the real
   harness turn ending rides in `Task.metadata.dsh.stopReason`.
 - Any config change restarts the plugin and cancels in-flight tasks.
+- `streamGranularity` is not configurable: streaming emits committed assistant
+  messages only. Per-chunk streaming is designed but unbuilt.
+- No orphan-task watchdog: a task wedged non-terminal stays that way.
+- `push.enabled` only selects which error the push methods return; there is no
+  sender, and therefore no SSRF fence to configure.
+- Cross-session tool denial is not implemented. Peer isolation rests on
+  `workspaceMode: per-peer`, which is enforced.
 - Task state survives settlement but not a restart: session persistence is not
   composed yet, so the projection has no log to cold-fold after a reboot.
 - `workspaceMode: per-peer` is a poor default for collaborating peers — they must

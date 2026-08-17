@@ -102,23 +102,14 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
     maxContextTurns: options.maxContextTurns ?? 5,
     sendMode: options.sendMode ?? 'block',
     blockTimeoutMs: options.blockTimeoutMs ?? 15_000,
-    taskTimeoutMs: 900_000,
     contextIdleTtlMs: 1_800_000,
     maxResidentContexts: 64,
-    streamGranularity: 'message',
     isolation: {
       workspaceMode: options.workspaceMode ?? 'per-peer',
       workspaceRoot: options.workspaceRoot,
       peerWorkspaces: {},
-      deniedTools: [],
-      unsafeAllowCrossSessionSearch: false,
     },
-    push: {
-      enabled: false,
-      allowPrivateNetworkCallbacks: false,
-      allowInsecureCallbacks: false,
-      requestTimeoutMs: 10_000,
-    },
+    push: { enabled: false },
   }
   await ctx.plugin(A2AServer, config)
 
