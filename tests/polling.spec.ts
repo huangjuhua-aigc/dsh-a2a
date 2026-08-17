@@ -29,6 +29,7 @@ beforeEach(async () => {
   workspaceRoot = await mkdtemp(join(tmpdir(), 'dsh-a2a-poll-'))
   process.env['A2A_PEER_ALICE'] = TOKEN
   app = await compose({
+    forceStub: true,
     workspaceRoot,
     peers: { alice: 'A2A_PEER_ALICE' },
     sendMode: 'immediate',
@@ -132,6 +133,7 @@ describe('the polling path', () => {
 
   it("still hides another peer's settled task", async () => {
     const app2 = await compose({
+      forceStub: true,
       workspaceRoot,
       peers: { alice: 'A2A_PEER_ALICE', bob: 'A2A_PEER_BOB' },
       sendMode: 'immediate',

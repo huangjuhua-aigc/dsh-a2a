@@ -99,7 +99,7 @@ function streamRequest(id: number, text: string, contextId?: string): unknown {
 beforeEach(async () => {
   workspaceRoot = await mkdtemp(join(tmpdir(), 'dsh-a2a-sse-'))
   process.env['A2A_PEER_ALICE'] = ALICE_TOKEN
-  app = await compose({ workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
+  app = await compose({ forceStub: true, workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
 })
 
 afterEach(async () => {
@@ -206,7 +206,7 @@ describe('a task held open', () => {
   it('sends a terminal frame on teardown instead of dropping the socket', async () => {
     // A raw socket destroy is indistinguishable from a network fault, and the
     // peer would retry a task that no longer exists.
-    const app2 = await compose({ workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
+    const app2 = await compose({ forceStub: true, workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
     const release = app2.adapter.hold()
     const streaming = readStream(app2.rpcUrl, ALICE_TOKEN, streamRequest(1, 'slow'))
     await new Promise(resolve => setTimeout(resolve, 200))

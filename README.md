@@ -39,7 +39,17 @@ quickest way to confirm the carrier is there.
 
 ## Try it locally
 
-No API key required — the example composition mounts a stub echo adapter.
+The example composition picks its model from the environment:
+
+| `DEEPSEEK_API_KEY` | Model route | Use |
+|---|---|---|
+| set | `deepseek-official/deepseek-v4-flash` | real replies |
+| unset | `echo/echo-1` | deterministic stub, no key, no tokens spent |
+
+`DEEPSEEK_MODEL` overrides the model id. The server prints which route is live
+at startup. The test suite always forces the stub — a real model would make
+assertions about exact reply text meaningless.
+
 `A2A_SEND_MODE=immediate` is what exercises the polling path: the peer gets a
 non-terminal task and must come back with `tasks/get` for the result.
 
@@ -48,6 +58,8 @@ non-terminal task and must come back with `tasks/get` for the result.
 ```sh
 pnpm install
 A2A_PEER_ALICE=demo123 A2A_PORT=9922 A2A_SEND_MODE=immediate pnpm serve
+# with a real model:
+DEEPSEEK_API_KEY=sk-... A2A_PEER_ALICE=demo123 pnpm serve
 ```
 
 ```sh
@@ -69,6 +81,7 @@ pnpm install
 $env:A2A_PEER_ALICE = "demo123"
 $env:A2A_PORT = "9922"
 $env:A2A_SEND_MODE = "immediate"
+$env:DEEPSEEK_API_KEY = "sk-..."   # omit for the stub
 pnpm serve
 ```
 

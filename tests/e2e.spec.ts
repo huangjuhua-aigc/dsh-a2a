@@ -63,6 +63,7 @@ beforeEach(async () => {
   process.env['A2A_PEER_ALICE'] = ALICE_TOKEN
   process.env['A2A_PEER_BOB'] = BOB_TOKEN
   app = await compose({
+    forceStub: true,
     workspaceRoot,
     peers: { alice: 'A2A_PEER_ALICE', bob: 'A2A_PEER_BOB' },
   })
@@ -227,6 +228,7 @@ describe('peer isolation', () => {
 describe('anti-loop cap', () => {
   it('rejects a context that exceeds the turn cap', async () => {
     const app2 = await compose({
+      forceStub: true,
       workspaceRoot,
       peers: { alice: 'A2A_PEER_ALICE' },
       maxContextTurns: 2,
@@ -247,6 +249,7 @@ describe('anti-loop cap', () => {
 describe('trust gate', () => {
   it('refuses an authenticated peer that is not on the allow list', async () => {
     const app2 = await compose({
+      forceStub: true,
       workspaceRoot,
       peers: { alice: 'A2A_PEER_ALICE', bob: 'A2A_PEER_BOB' },
       trustedPeers: ['alice'],
@@ -262,7 +265,7 @@ describe('trust gate', () => {
 
 describe('teardown', () => {
   it('leaves no orphan agent after the plugin tree is disposed', async () => {
-    const app2 = await compose({ workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
+    const app2 = await compose({ forceStub: true, workspaceRoot, peers: { alice: 'A2A_PEER_ALICE' } })
     await rpc(app2.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'))
     await app2.stop()
     // The port must be released, proving the route registration and the HTTP

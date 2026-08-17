@@ -65,6 +65,7 @@ dsh-a2a listening on ${origin}
   JSON-RPC     ${origin}/a2a
   Workspaces   ${workspaceRoot}/<peer>
   sendMode     ${sendMode}
+  model        ${app.model.provider}/${app.model.id}${app.model.real ? '' : '   (stub echo — set DEEPSEEK_API_KEY for a real model)'}
 
 Try it:
 

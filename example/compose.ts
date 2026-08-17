@@ -18,6 +18,7 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
+import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import * as A2AServer from '../src/index.ts'
 import { EchoAdapter, ECHO_MODEL, ECHO_PROVIDER } from './echo-adapter.ts'
 import type { A2AServerConfig } from '../src/index.ts'
@@ -31,8 +32,10 @@ export interface Composition {
   rpcUrl: string
   /** Base URL of the Agent Card. */
   cardUrl: string
-  /** The stub adapter, so a test can hold a turn open. */
+  /** The stub adapter, so a test can hold a turn open. Absent on a real model. */
   adapter: EchoAdapter
+  /** Which model route the agents actually run on. */
+  model: { provider: string; id: string; real: boolean }
   /** Tear the whole tree down and settle. */
   stop: () => Promise<void>
 }
@@ -55,7 +58,18 @@ export interface ComposeOptions {
   blockTimeoutMs?: number
   /** Share one workspace across peers instead of isolating them. */
   workspaceMode?: 'per-peer' | 'shared'
+  /**
+   * Force the stub echo adapter even when a DeepSeek key is present.
+   *
+   * The test suite sets this: a real model would make assertions about exact
+   * reply text meaningless and would spend tokens on every run.
+   */
+  forceStub?: boolean
 }
+
+/** The DeepSeek provider route and the model this demo asks for. */
+const DEEPSEEK_PROVIDER = 'deepseek-official'
+const DEEPSEEK_MODEL = process.env['DEEPSEEK_MODEL'] ?? 'deepseek-v4-flash'
 
 /**
  * Boot a harness composition with the A2A server mounted.
@@ -66,8 +80,17 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: '' } })
   await ctx.plugin(AgentLoop, { agents: [] })
+  // A real model when a key is configured, the deterministic stub otherwise.
+  // The adapter is chosen here rather than inside the plugin because model
+  // routing is composition policy, not something the A2A transport decides.
+  const useReal = options.forceStub !== true
+    && (process.env['DEEPSEEK_API_KEY'] ?? '').length > 0
   const adapter = new EchoAdapter()
   ctx.llm.registerAdapter([ECHO_PROVIDER], adapter)
+  if (useReal) await ctx.plugin(LlmDeepSeek, {})
+  const model = useReal
+    ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
+    : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
 
   // `CredentialProvider` is the abstract Service Definition; only the local
   // file-backed provider is mountable. It layers the process environment over
@@ -81,8 +104,8 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const config: A2AServerConfig = {
     basePath: '/a2a',
     protocolVersion: '0.3.0',
-    provider: ECHO_PROVIDER,
-    model: ECHO_MODEL,
+    provider: model.provider,
+    model: model.id,
     card: {
       name: 'dsh-a2a-demo',
       description: 'A DeepSeek Harness agent reachable over A2A.',
@@ -118,6 +141,7 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   return {
     ctx,
     adapter,
+    model,
     port,
     rpcUrl: `${origin}/a2a`,
     cardUrl: `${origin}/.well-known/agent-card.json`,
