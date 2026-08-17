@@ -66,7 +66,7 @@ describe('the polling path', () => {
     release()
   })
 
-  it('LOSES the task the moment it completes, so a poller never learns the result', async () => {
+  it('answers with the terminal state after the task settles', async () => {
     const release = app.adapter.hold()
     const sent = await rpc({
       jsonrpc: '2.0', id: 1, method: 'message/send',
@@ -75,13 +75,75 @@ describe('the polling path', () => {
     const taskId = sent['result'].id as string
 
     release()
-    // Let the turn finish and the slot settle.
+    // Let the turn finish and the slot settle out of the live table.
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // The slot is gone; this answer comes from the projection folded over the
+    // `a2a/task` edges in the session log.
+    const polled = await rpc({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId } })
+    expect(polled['error']).toBeUndefined()
+    expect(polled['result'].status.state).toBe('completed')
+    expect(polled['result'].id).toBe(taskId)
+  })
+
+  it('stays idempotent across repeated polls of a settled task', async () => {
+    const sent = await rpc({
+      jsonrpc: '2.0', id: 1, method: 'message/send',
+      params: { message: { kind: 'message', messageId: 'm1', role: 'user', parts: [{ kind: 'text', text: 'hi' }] } },
+    })
+    const taskId = sent['result'].id as string
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const first = await rpc({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId } })
+    const second = await rpc({ jsonrpc: '2.0', id: 3, method: 'tasks/get', params: { taskId } })
+    expect(first['result'].status.state).toBe('completed')
+    expect(second['result'].status.state).toBe('completed')
+  })
+
+  it('carries the real harness turn ending in metadata', async () => {
+    const sent = await rpc({
+      jsonrpc: '2.0', id: 1, method: 'message/send',
+      params: { message: { kind: 'message', messageId: 'm1', role: 'user', parts: [{ kind: 'text', text: 'hi' }] } },
+    })
+    const taskId = sent['result'].id as string
     await new Promise(resolve => setTimeout(resolve, 500))
 
     const polled = await rpc({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId } })
-    // This is the gap a projection unit closes: the task DID complete, and its
-    // terminal edge is in the session log, but the process-local slot is gone
-    // so the peer is told the task never existed.
-    expect(polled['error'].code).toBe(-32001)
+    // A2A's state enum cannot express a token ceiling or a steering stop, so
+    // the true ending rides alongside for peers that care.
+    expect(polled['result'].metadata.dsh.stopReason).toBeTruthy()
+  })
+
+  it("still hides another peer's settled task", async () => {
+    const app2 = await compose({
+      workspaceRoot,
+      peers: { alice: 'A2A_PEER_ALICE', bob: 'A2A_PEER_BOB' },
+      sendMode: 'immediate',
+    })
+    process.env['A2A_PEER_BOB'] = 'tok-bob-poll'
+    try {
+      const sent = await fetch(app2.rpcUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'message/send',
+          params: { message: { kind: 'message', messageId: 'm1', role: 'user', parts: [{ kind: 'text', text: 'hi' }] } },
+        }),
+      })
+      const taskId = ((await sent.json()) as Record<string, any>).result.id as string
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Reading through the projection must not widen visibility.
+      const peeked = await fetch(app2.rpcUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer tok-bob-poll' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId } }),
+      })
+      const body = await peeked.json() as Record<string, any>
+      expect(body.error.code).toBe(-32001)
+    } finally {
+      delete process.env['A2A_PEER_BOB']
+      await app2.stop()
+    }
   })
 })

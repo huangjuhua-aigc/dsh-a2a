@@ -268,17 +268,30 @@ describe('tasks/resubscribe', () => {
     expect(second.frames.at(-1)?.result['taskId']).toBe(taskId)
   })
 
-  it('reports a settled task as not found, because no slot survives settlement', async () => {
-    // A documented limitation, not an accident: task state is still
-    // process-local, so a completed task leaves the in-memory table. The
-    // projection unit that makes this answerable is not built yet.
+  it('delivers the outcome of an already-settled task in one terminal frame', async () => {
+    // A peer that reconnects after the fact still deserves the result; the
+    // answer comes from the projection, not from a live slot.
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
     const taskId = frames[0]?.result['taskId'] as string
+    await new Promise(resolve => setTimeout(resolve, 200))
 
+    const again = await readStream(app.rpcUrl, ALICE_TOKEN, {
+      jsonrpc: '2.0', id: 9, method: 'tasks/resubscribe', params: { taskId },
+    })
+    expect(again.contentType).toContain('text/event-stream')
+    expect(again.frames).toHaveLength(1)
+    expect(again.frames[0]?.result['final']).toBe(true)
+    expect(again.frames[0]?.result['status'].state).toBe('completed')
+    expect(again.frames[0]?.result['taskId']).toBe(taskId)
+  })
+
+  it('still reports a task this peer does not own as not found', async () => {
     const response = await fetch(app.rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ALICE_TOKEN}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/resubscribe', params: { taskId } }),
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 2, method: 'tasks/resubscribe', params: { taskId: 'never-existed' },
+      }),
     })
     const body = await response.json() as Record<string, any>
     expect(body.error.code).toBe(-32001)

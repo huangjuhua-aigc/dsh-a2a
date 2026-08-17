@@ -35,11 +35,13 @@ import { ContextRegistry, type Activation } from './contexts.ts'
 import { identifyPeer, RateLimiter, TurnTracker, type PeerIdentity } from './security.ts'
 import { artifactsFromTexts, createSlot, stateFromEnding, type TaskSlot } from './tasks.ts'
 import { createRouter, type RouterDeps } from './router.ts'
+import { a2aTaskProjection } from './projection.ts'
 // Side-effect type imports: these declaration-merge `ctx.webServer` and
 // `ctx.credentials` onto Context, and our own `a2a/task` / `a2a-peer` vocabulary
 // onto the session and message maps. None of them add a runtime dependency.
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from './types.ts'
 
 export { Config }
@@ -362,8 +364,49 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     return activation
   }
 
+  // ── Durable task read model ────────────────────────────────────────────
+  // Optional capability: a composition without the registry keeps working, it
+  // just cannot answer for a task after that task settles.
+  const projections = ctx.get('sessionProjections')
+  if (projections !== undefined) {
+    ctx.effect(
+      () => projections.register(a2aTaskProjection),
+      'a2a.projection',
+    )
+  } else {
+    logger.warn(
+      'a2a: no sessionProjections registry composed; tasks/get cannot answer '
+      + 'once a task settles, so a polling peer will never learn its result',
+    )
+  }
+
+  /**
+   * Read a settled task back from the projection.
+   *
+   * The fold is authoritative for anything not in the live slot table, so this
+   * is what makes the polling path work at all.
+   */
+  const readProjectedTask = (activation: Activation, taskId: A2ATaskId): A2ATask | undefined => {
+    if (projections === undefined) return undefined
+    const snapshot = projections.snapshot(activation.agent.session)
+    const view = snapshot.values.a2aTask?.tasks[taskId]
+    // Ownership is re-checked against the RECORDED peer rather than the
+    // activation's, so a context that somehow served two identities could not
+    // leak one's task to the other.
+    if (view === undefined || view.peer !== activation.peer) return undefined
+    return {
+      kind: 'task',
+      id: taskId,
+      contextId: activation.contextId,
+      status: { state: view.state, timestamp: view.updatedAt },
+      artifacts: [],
+      ...view.stopReason === undefined ? {} : { metadata: { dsh: { stopReason: view.stopReason } } },
+    }
+  }
+
   // ── Router ─────────────────────────────────────────────────────────────
   const deps: RouterDeps = {
+    readProjectedTask,
     config,
     contexts,
     turns,

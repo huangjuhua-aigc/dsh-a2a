@@ -66,6 +66,13 @@ export interface RouterDeps {
     artifacts: A2AArtifact[],
     stopReason?: string,
   ) => A2ATask
+  /**
+   * Read a settled task back from the durable projection.
+   *
+   * Absent when the composition mounts no projection registry, in which case a
+   * settled task is simply unreadable — the pre-projection behavior.
+   */
+  readProjectedTask?: (activation: Activation, taskId: A2ATaskId) => A2ATask | undefined
 }
 
 /** One live SSE subscription. */
@@ -249,17 +256,71 @@ export function createRouter(deps: RouterDeps): Router {
     return found
   }
 
-  /** Find a task slot this peer is allowed to see. */
+  /**
+   * Find an IN-FLIGHT task slot this peer owns.
+   *
+   * A settled task has no slot — `settleSlot` removes it — so this is only the
+   * first half of a lookup. Operations that merely READ a task fall through to
+   * the projection ({@link readTask}); operations that act on a running task
+   * (cancel, resubscribe) need the live slot and stop here.
+   */
   const requireSlot = (rawTaskId: unknown, peer: PeerIdentity): { activation: Activation; slot: TaskSlot } => {
+    const found = findSlot(rawTaskId, peer)
+    if (found === undefined) throw taskNotFound(requireTaskId(rawTaskId))
+    return found
+  }
+
+  /** Locate an in-flight slot this peer owns, without throwing when absent. */
+  const findSlot = (
+    rawTaskId: unknown,
+    peer: PeerIdentity,
+  ): { activation: Activation; slot: TaskSlot } | undefined => {
+    const taskId = requireTaskId(rawTaskId)
+    for (const activation of deps.contexts.values()) {
+      if (activation.peer !== peer) continue
+      const slot = activation.slots.get(taskId)
+      if (slot !== undefined) return { activation, slot }
+    }
+    return undefined
+  }
+
+  /** Validate the `taskId` parameter shape. */
+  const requireTaskId = (rawTaskId: unknown): A2ATaskId => {
     if (typeof rawTaskId !== 'string' || rawTaskId.length === 0) {
       throw new A2ARpcError(ERR_INVALID_PARAMS, 'taskId is required')
     }
+    return rawTaskId as A2ATaskId
+  }
+
+  /**
+   * Read a task's current state, live slot or not.
+   *
+   * Falls back to the durable projection, which is what makes `tasks/get`
+   * answerable after settlement — and, once persistence is composed, after a
+   * restart. A task belonging to another peer reports exactly like an absent
+   * one, so ownership cannot be probed by comparing responses.
+   */
+  const readTask = (rawTaskId: unknown, peer: PeerIdentity): A2ATask => {
+    const taskId = requireTaskId(rawTaskId)
+
     for (const activation of deps.contexts.values()) {
       if (activation.peer !== peer) continue
-      const slot = activation.slots.get(rawTaskId as A2ATaskId)
-      if (slot !== undefined) return { activation, slot }
+      const slot = activation.slots.get(taskId)
+      if (slot !== undefined) {
+        const state: A2ATaskState = slot.turn === undefined ? 'submitted' : 'working'
+        return deps.taskSnapshot(activation, slot, state, redactArtifacts(
+          slot.texts.length > 0
+            ? [{
+              artifactId: `${taskId}-result`,
+              parts: [{ kind: 'text', text: slot.texts.join('\n') }],
+            }]
+            : [],
+        ))
+      }
+      const projected = deps.readProjectedTask?.(activation, taskId)
+      if (projected !== undefined) return projected
     }
-    throw taskNotFound(rawTaskId)
+    throw taskNotFound(taskId)
   }
 
   const dispatch = async (
@@ -326,11 +387,7 @@ export function createRouter(deps: RouterDeps): Router {
       }
 
       case 'get': {
-        const { activation, slot } = requireSlot((params as Record<string, unknown>)?.['taskId'], peer)
-        const state: A2ATaskState = slot.done ? 'completed' : slot.turn === undefined ? 'submitted' : 'working'
-        const task = deps.taskSnapshot(activation, slot, state, redactArtifacts(
-          slot.texts.length > 0 ? [{ artifactId: `${slot.taskId}-result`, parts: [{ kind: 'text', text: slot.texts.join('\n') }] }] : [],
-        ))
+        const task = readTask((params as Record<string, unknown>)?.['taskId'], peer)
         sendJson(res, 200, jsonRpcResult(id, renderTask(task, dialect)))
         return
       }
@@ -345,8 +402,17 @@ export function createRouter(deps: RouterDeps): Router {
       }
 
       case 'resubscribe': {
-        const { activation, slot } = requireSlot((params as Record<string, unknown>)?.['taskId'], peer)
-        openStream(res, id, dialect, slot, activation)
+        const rawTaskId = (params as Record<string, unknown>)?.['taskId']
+        const live = findSlot(rawTaskId, peer)
+        if (live !== undefined) {
+          openStream(res, id, dialect, live.slot, live.activation)
+          return
+        }
+        // Already settled: a peer that reconnects after the fact still deserves
+        // the outcome. Emit the terminal transition from the projection and
+        // close, rather than claiming the task never existed.
+        const task = readTask(rawTaskId, peer)
+        openSettledStream(res, id, dialect, task)
         return
       }
 
@@ -409,6 +475,34 @@ export function createRouter(deps: RouterDeps): Router {
       streams.delete(channel)
       res.end()
     })
+  }
+
+  /**
+   * Answer a resubscribe for an already-settled task: one terminal frame, then close.
+   * @param res - the HTTP response to stream over.
+   * @param id - the JSON-RPC id to correlate frames with.
+   * @param dialect - the dialect the peer spoke.
+   * @param task - the settled task, read from the projection.
+   */
+  const openSettledStream = (
+    res: ServerResponse,
+    id: string | number | null,
+    dialect: A2ADialect,
+    task: A2ATask,
+  ): void => {
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    })
+    res.write(sseFrame(id, renderStatusUpdate({
+      kind: 'status-update',
+      taskId: task.id,
+      contextId: task.contextId,
+      status: task.status,
+      final: true,
+    }, dialect)))
+    res.end()
   }
 
   const closeStreams = (): void => {

@@ -17,6 +17,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import * as A2AServer from '../src/index.ts'
 import { EchoAdapter, ECHO_MODEL, ECHO_PROVIDER } from './echo-adapter.ts'
 import type { A2AServerConfig } from '../src/index.ts'
@@ -72,6 +73,9 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   // file-backed provider is mountable. It layers the process environment over
   // `$DSH_HOME/.credentials.yaml`, which is where the demo's peer tokens live.
   await ctx.plugin(LocalCredentialProvider, {})
+  // The durable task read model: without it, tasks/get cannot answer once a
+  // task settles, and a polling peer never learns its result.
+  await ctx.plugin(SessionProjections)
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: options.port ?? 0 })
 
   const config: A2AServerConfig = {

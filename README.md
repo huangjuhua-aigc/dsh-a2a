@@ -52,9 +52,9 @@ curl -s http://127.0.0.1:9900/a2a \
 |---|---|
 | `message/send` | ✅ blocking or immediate |
 | `message/stream` | ✅ SSE, both dialects |
-| `tasks/get` | ✅ |
+| `tasks/get` | ✅ idempotent, answers after settlement |
 | `tasks/cancel` | ✅ real cancellation, not just a dropped reply |
-| `tasks/resubscribe` | ✅ |
+| `tasks/resubscribe` | ✅ live task, or one terminal frame for a settled one |
 | `tasks/pushNotificationConfig/*` | ⛔ not implemented; card advertises `pushNotifications: false` |
 
 Both dialects are accepted: v0.3 (`message/send`, `"working"`, `kind`-tagged
@@ -150,6 +150,20 @@ readable by peer B.
 - **Replies are scrubbed** of credential-shaped strings before leaving.
 - **Tool results never reach a peer** — A2A's opaque-execution principle.
 
+## Task durability
+
+Task state is folded out of the session log by an `a2aTask` projection unit, so
+`tasks/get` keeps answering after a task settles — which is what makes the
+polling path usable at all. `message/stream` and push notifications are optional
+A2A capabilities; `tasks/get` is the baseline every peer can rely on.
+
+The projection registry (`ctx.sessionProjections`) is an optional dependency. A
+composition without it still serves, but logs a warning and cannot answer for a
+task once it settles.
+
+Surviving a process restart additionally needs session persistence composed;
+that path is not wired yet.
+
 ## Known limitations
 
 - Push notifications are not implemented; the card advertises them as absent.
@@ -158,6 +172,8 @@ readable by peer B.
 - A token ceiling settles a task as `completed`, not a distinct state; the real
   harness turn ending rides in `Task.metadata.dsh.stopReason`.
 - Any config change restarts the plugin and cancels in-flight tasks.
+- Task state survives settlement but not a restart: session persistence is not
+  composed yet, so the projection has no log to cold-fold after a reboot.
 - `workspaceMode: per-peer` is a poor default for collaborating peers — they must
   set `shared` explicitly or each will see only its own empty directory.
 
@@ -166,7 +182,7 @@ readable by peer B.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 103 tests: protocol, security, tasks, contexts, end-to-end, SSE
+pnpm test          # 122 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
 pnpm serve         # a real server on localhost
 ```
 
