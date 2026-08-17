@@ -19,6 +19,7 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as A2AServer from '../src/index.ts'
 import { EchoAdapter, ECHO_MODEL, ECHO_PROVIDER } from './echo-adapter.ts'
 import type { A2AServerConfig } from '../src/index.ts'
@@ -59,12 +60,24 @@ export interface ComposeOptions {
   /** Share one workspace across peers instead of isolating them. */
   workspaceMode?: 'per-peer' | 'shared'
   /**
-   * Force the stub echo adapter even when a DeepSeek key is present.
+   * Use the deterministic stub instead of a real model.
    *
-   * The test suite sets this: a real model would make assertions about exact
-   * reply text meaningless and would spend tokens on every run.
+   * Only the test suite sets this: a real model would make assertions about
+   * exact reply text meaningless and would spend tokens on every run. Running
+   * the demo never falls back to the stub — a missing key is an error.
    */
   forceStub?: boolean
+}
+
+/** The credential reference the DeepSeek adapter resolves per request. */
+export const DEEPSEEK_API_KEY_REF = 'DEEPSEEK_API_KEY'
+
+/** No usable model credential, reported before anything starts serving. */
+export class MissingModelCredentialError extends Error {
+  constructor(readonly ref: string) {
+    super(`no credential configured for ${ref}`)
+    this.name = 'MissingModelCredentialError'
+  }
 }
 
 /** The DeepSeek provider route and the model this demo asks for. */
@@ -80,22 +93,32 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: '' } })
   await ctx.plugin(AgentLoop, { agents: [] })
-  // A real model when a key is configured, the deterministic stub otherwise.
-  // The adapter is chosen here rather than inside the plugin because model
-  // routing is composition policy, not something the A2A transport decides.
-  const useReal = options.forceStub !== true
-    && (process.env['DEEPSEEK_API_KEY'] ?? '').length > 0
   const adapter = new EchoAdapter()
   ctx.llm.registerAdapter([ECHO_PROVIDER], adapter)
-  if (useReal) await ctx.plugin(LlmDeepSeek, {})
-  const model = useReal
-    ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
-    : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
 
   // `CredentialProvider` is the abstract Service Definition; only the local
   // file-backed provider is mountable. It layers the process environment over
   // `$DSH_HOME/.credentials.yaml`, which is where the demo's peer tokens live.
   await ctx.plugin(LocalCredentialProvider, {})
+
+  // Model routing is composition policy, not something the A2A transport
+  // decides — the plugin just takes provider/model from its config.
+  //
+  // The credential check asks the seam rather than reading process.env: a key
+  // may live in the managed document, either .env layer, or the environment,
+  // and `describe()` answers "is this configured" without ever holding a value.
+  const useReal = options.forceStub !== true
+  if (useReal) {
+    await ctx.plugin(LlmDeepSeek, {})
+    const info = await ctx.credentials.describe(credentialRef(DEEPSEEK_API_KEY_REF))
+    if (!info.configured) {
+      await ctx.fiber.dispose()
+      throw new MissingModelCredentialError(DEEPSEEK_API_KEY_REF)
+    }
+  }
+  const model = useReal
+    ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
+    : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
   // The durable task read model: without it, tasks/get cannot answer once a
   // task settles, and a polling peer never learns its result.
   await ctx.plugin(SessionProjections)

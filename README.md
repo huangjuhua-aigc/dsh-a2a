@@ -39,16 +39,15 @@ quickest way to confirm the carrier is there.
 
 ## Try it locally
 
-The example composition picks its model from the environment:
+The demo always runs a real model — `deepseek-official/deepseek-v4-flash`, or
+whatever `DEEPSEEK_MODEL` names. A missing credential is an error, not a silent
+fall back to a stub that would answer nothing useful.
 
-| `DEEPSEEK_API_KEY` | Model route | Use |
-|---|---|---|
-| set | `deepseek-official/deepseek-v4-flash` | real replies |
-| unset | `echo/echo-1` | deterministic stub, no key, no tokens spent |
-
-`DEEPSEEK_MODEL` overrides the model id. The server prints which route is live
-at startup. The test suite always forces the stub — a real model would make
-assertions about exact reply text meaningless.
+The credential is resolved through `ctx.credentials`, so it may live in the
+process environment, `$DSH_HOME/.credentials.yaml`, or either `.env` layer —
+whichever a harness install already uses works here unchanged. The test suite
+forces the stub instead: a real model would make assertions about exact reply
+text meaningless and would spend tokens on every run.
 
 `A2A_SEND_MODE=immediate` is what exercises the polling path: the peer gets a
 non-terminal task and must come back with `tasks/get` for the result.
@@ -58,8 +57,6 @@ non-terminal task and must come back with `tasks/get` for the result.
 ```sh
 pnpm install
 A2A_PEER_ALICE=demo123 A2A_PORT=9922 A2A_SEND_MODE=immediate pnpm serve
-# with a real model:
-DEEPSEEK_API_KEY=sk-... A2A_PEER_ALICE=demo123 pnpm serve
 ```
 
 ```sh
@@ -81,7 +78,6 @@ pnpm install
 $env:A2A_PEER_ALICE = "demo123"
 $env:A2A_PORT = "9922"
 $env:A2A_SEND_MODE = "immediate"
-$env:DEEPSEEK_API_KEY = "sk-..."   # omit for the stub
 pnpm serve
 ```
 

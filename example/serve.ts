@@ -3,9 +3,9 @@
  *
  *   A2A_PEER_ALICE=$(openssl rand -hex 16) pnpm serve
  *
- * Uses the stub echo adapter, so it needs no API key: the point is to exercise
- * discovery, authentication, and the task round trip end to end with curl or a
- * real A2A client.
+ * Always runs a real model: a missing DEEPSEEK_API_KEY is an error, not a
+ * silent fall back to a stub that would answer nothing useful. The stub exists
+ * only for the test suite, which needs deterministic replies.
  *
  * @module dsh-a2a/example/serve
  */
@@ -13,9 +13,13 @@
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compose } from './compose.ts'
+import { homedir } from 'node:os'
+import { compose, MissingModelCredentialError } from './compose.ts'
 
 const PORT = Number(process.env['A2A_PORT'] ?? 9900)
+
+/** Where the harness keeps its config, for the credential diagnostic. */
+const dshHome = process.env['DSH_HOME'] ?? join(homedir(), '.dsh')
 
 const token = process.env['A2A_PEER_ALICE']
 if (token === undefined || token.length === 0) {
@@ -34,15 +38,28 @@ const workspaceRoot = process.env['A2A_WORKSPACE_ROOT']
 // task and must come back with tasks/get for the result.
 const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'block'
 
-// A bind failure throws out of the web carrier's activation and rejects the
-// whole composition — correct, but the raw EADDRINUSE stack buries the one fact
-// that matters, which is usually a server left over from a previous run.
+// Two failures are common enough to be worth explaining rather than dumping:
+// a port left bound by an earlier run, and no model credential configured.
 const app = await compose({
   port: PORT,
   workspaceRoot,
   peers: { alice: 'A2A_PEER_ALICE' },
   sendMode,
 }).catch((error: unknown) => {
+  if (error instanceof MissingModelCredentialError) {
+    console.error(`No credential configured for ${error.ref}.\n`)
+    console.error('  The harness resolves it from, in precedence order:\n')
+    console.error('    1. the process environment')
+    console.error(`    2. ${join(dshHome, '.credentials.yaml')}     <- the writable one`)
+    console.error('    3. <invocation cwd>/.env')
+    console.error(`    4. ${join(dshHome, '.env')}\n`)
+    console.error('  Store it in the managed document:\n')
+    console.error(`    ${error.ref}: sk-...\n`)
+    console.error('  Or pass it for one run:\n')
+    console.error(`    bash:       ${error.ref}=sk-... pnpm serve`)
+    console.error(`    PowerShell: $env:${error.ref} = "sk-..."; pnpm serve`)
+    process.exit(1)
+  }
   if ((error as { code?: string })?.code === 'EADDRINUSE'
     || String(error).includes('EADDRINUSE')) {
     console.error(`Port ${PORT} is already in use — most likely an earlier run of this server.\n`)
@@ -65,7 +82,7 @@ dsh-a2a listening on ${origin}
   JSON-RPC     ${origin}/a2a
   Workspaces   ${workspaceRoot}/<peer>
   sendMode     ${sendMode}
-  model        ${app.model.provider}/${app.model.id}${app.model.real ? '' : '   (stub echo — set DEEPSEEK_API_KEY for a real model)'}
+  model        ${app.model.provider}/${app.model.id}
 
 Try it:
 
