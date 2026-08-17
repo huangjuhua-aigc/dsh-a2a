@@ -1,7 +1,7 @@
 /**
  * Run a real A2A server on localhost.
  *
- *   A2A_PEER_ALICE=$(openssl rand -hex 16) pnpm serve
+ *   A2A_PEERS="alice:demo123" pnpm serve
  *
  * Always runs a real model: a missing DEEPSEEK_API_KEY is an error, not a
  * silent fall back to a stub that would answer nothing useful. The stub exists
@@ -21,13 +21,56 @@ const PORT = Number(process.env['A2A_PORT'] ?? 9900)
 /** Where the harness keeps its config, for the credential diagnostic. */
 const dshHome = process.env['DSH_HOME'] ?? join(homedir(), '.dsh')
 
-const token = process.env['A2A_PEER_ALICE']
-if (token === undefined || token.length === 0) {
+/**
+ * Peer names are arbitrary — the plugin only requires
+ * `[A-Za-z0-9][A-Za-z0-9_-]*`, since a name becomes a workspace directory.
+ * `alice` is this demo's default, not a protocol fixture.
+ *
+ * `A2A_PEERS` accepts either form:
+ *
+ *   A2A_PEERS="alice,bob"            names only; tokens come from the
+ *                                    credential reference A2A_PEER_<NAME>
+ *   A2A_PEERS="alice:tok1,bob:tok2"  token inline, for a quick demo
+ *
+ * The inline form writes the value into the process environment, which is the
+ * credential seam's top layer — so the plugin still resolves a reference and
+ * never receives a raw token in its configuration.
+ */
+const PEER_SPEC = process.env['A2A_PEERS'] ?? 'alice'
+
+/** Credential reference name for one peer. */
+const refFor = (peer: string): string => `A2A_PEER_${peer.toUpperCase().replace(/-/g, '_')}`
+
+const peers: Record<string, string> = {}
+for (const entry of PEER_SPEC.split(',')) {
+  const [rawName, ...rest] = entry.trim().split(':')
+  const peer = (rawName ?? '').trim()
+  if (peer.length === 0) continue
+  const ref = refFor(peer)
+  const inline = rest.join(':').trim()
+  if (inline.length > 0) process.env[ref] = inline
+  peers[peer] = ref
+}
+
+const unconfigured = Object.entries(peers)
+  .filter(([, ref]) => (process.env[ref] ?? '').length === 0)
+  .map(([peer, ref]) => `${peer} → ${ref}`)
+
+if (Object.keys(peers).length === 0 || unconfigured.length > 0) {
   // Bind safety: with no credential configured there is nobody who could be
   // authenticated, so serving would only ever answer 401.
-  console.error('Set A2A_PEER_ALICE to a token before starting.\n')
-  console.error('  bash:       A2A_PEER_ALICE=demo123 pnpm serve')
-  console.error('  PowerShell: $env:A2A_PEER_ALICE = "demo123"; pnpm serve')
+  if (unconfigured.length > 0) {
+    console.error(`No token for: ${unconfigured.join(', ')}\n`)
+  } else {
+    console.error('A2A_PEERS named no usable peer.\n')
+  }
+  console.error('  Name the peers and give each a token:\n')
+  console.error('    bash:       A2A_PEERS="alice:demo123" pnpm serve')
+  console.error('    PowerShell: $env:A2A_PEERS = "alice:demo123"; pnpm serve\n')
+  console.error('  Several peers:\n')
+  console.error('    A2A_PEERS="alice:tok1,bob:tok2"\n')
+  console.error('  Or name them only, and store each token under its reference:\n')
+  console.error('    A2A_PEERS="alice,bob"   with A2A_PEER_ALICE / A2A_PEER_BOB set')
   process.exit(1)
 }
 
@@ -43,7 +86,7 @@ const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'b
 const app = await compose({
   port: PORT,
   workspaceRoot,
-  peers: { alice: 'A2A_PEER_ALICE' },
+  peers,
   sendMode,
 }).catch((error: unknown) => {
   if (error instanceof MissingModelCredentialError) {
@@ -81,6 +124,7 @@ dsh-a2a listening on ${origin}
   Agent Card   ${origin}/.well-known/agent-card.json
   JSON-RPC     ${origin}/a2a
   Workspaces   ${workspaceRoot}/<peer>
+  Peers        ${Object.keys(peers).join(', ')}
   sendMode     ${sendMode}
   model        ${app.model.provider}/${app.model.id}
 
@@ -89,7 +133,7 @@ Try it:
   curl -s ${origin}/.well-known/agent-card.json      (PowerShell: curl.exe)
 
   curl -s ${origin}/a2a \\
-    -H "authorization: Bearer $A2A_PEER_ALICE" \\
+    -H "authorization: Bearer <token>" \\
     -H 'content-type: application/json' \\
     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
           "message":{"kind":"message","messageId":"m1","role":"user",

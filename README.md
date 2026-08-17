@@ -63,13 +63,22 @@ The bundled example composition runs a real model and a listening server.
 
 ```sh
 pnpm install
-A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve
+A2A_PEERS="alice:demo123" A2A_PORT=9922 pnpm serve
 ```
 
 ```powershell
-$env:A2A_PEER_ALICE = "demo123"
+$env:A2A_PEERS = "alice:demo123"
 $env:A2A_PORT = "9922"
 pnpm serve
+```
+
+Peer names are arbitrary — `alice` is this demo's default, not a protocol
+fixture. Name as many as you like, and either carry the token inline or store it
+under the derived credential reference:
+
+```sh
+A2A_PEERS="ops:tok1,research:tok2"   # inline
+A2A_PEERS="ops,research"             # tokens from A2A_PEER_OPS / A2A_PEER_RESEARCH
 ```
 
 The model credential is resolved through `ctx.credentials`, so an existing
@@ -91,7 +100,7 @@ curl -s http://127.0.0.1:9922/a2a \
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `A2A_PEER_ALICE` | — | Bearer token for the demo peer; required |
+| `A2A_PEERS` | `alice` | `name[:token]` list; a token is required for each |
 | `A2A_PORT` | `9900` | Listening port |
 | `A2A_SEND_MODE` | `block` | `block` or `immediate` |
 | `A2A_WORKSPACE_ROOT` | temp dir | Parent of the per-peer working directories |

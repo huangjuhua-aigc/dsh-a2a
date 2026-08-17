@@ -60,13 +60,21 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 
 ```sh
 pnpm install
-A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve
+A2A_PEERS="alice:demo123" A2A_PORT=9922 pnpm serve
 ```
 
 ```powershell
-$env:A2A_PEER_ALICE = "demo123"
+$env:A2A_PEERS = "alice:demo123"
 $env:A2A_PORT = "9922"
 pnpm serve
+```
+
+peer 名字是任意的——`alice` 只是这个 demo 的默认值，不是协议规定。可以声明任意多个，
+token 既可以内联，也可以存在派生出来的凭据引用下：
+
+```sh
+A2A_PEERS="ops:tok1,research:tok2"   # 内联
+A2A_PEERS="ops,research"             # token 取自 A2A_PEER_OPS / A2A_PEER_RESEARCH
 ```
 
 模型凭据经 `ctx.credentials` 解析，因此 harness home、任一 `.env` 层或进程环境中已有的
@@ -87,7 +95,7 @@ curl -s http://127.0.0.1:9922/a2a \
 
 | 变量 | 默认值 | 含义 |
 | --- | --- | --- |
-| `A2A_PEER_ALICE` | — | 示例 peer 的 bearer token，必填 |
+| `A2A_PEERS` | `alice` | `名字[:token]` 列表；每个 peer 都必须有 token |
 | `A2A_PORT` | `9900` | 监听端口 |
 | `A2A_SEND_MODE` | `block` | `block` 或 `immediate` |
 | `A2A_WORKSPACE_ROOT` | 临时目录 | per-peer 工作目录的父目录 |
