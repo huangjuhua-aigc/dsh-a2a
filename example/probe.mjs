@@ -84,6 +84,23 @@ async function stream(body) {
 
 console.log(`\nProbing ${origin}\n`)
 
+// Preflight: a refused connection is the overwhelmingly common failure here,
+// and an unhandled fetch rejection buries that behind a stack trace.
+try {
+  await fetch(`${origin}/.well-known/agent-card.json`)
+} catch (error) {
+  const cause = error?.cause?.code ?? error?.code
+  console.error(`Cannot reach ${origin}  (${cause ?? error})\n`)
+  if (cause === 'ECONNREFUSED') {
+    console.error('  Nothing is listening on that port. Start the server first:\n')
+    console.error('    bash:       A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve')
+    console.error('    PowerShell: $env:A2A_PEER_ALICE="demo123"; $env:A2A_PORT="9922"; pnpm serve\n')
+    console.error('  Then probe the port it actually printed:\n')
+    console.error('    node example/probe.mjs http://127.0.0.1:9922 demo123')
+  }
+  process.exit(2)
+}
+
 // ── Discovery ────────────────────────────────────────────────────────────
 console.log('Discovery')
 const cardResponse = await fetch(`${origin}/.well-known/agent-card.json`)
