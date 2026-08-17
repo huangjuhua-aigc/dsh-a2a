@@ -374,9 +374,20 @@ export function createRouter(deps: RouterDeps): Router {
           return
         }
 
-        const settlement = config.sendMode === 'immediate'
-          ? undefined
-          : await withTimeout(slot.settled, config.blockTimeoutMs)
+        // A2A is async-first: `message/send` MAY answer with a non-terminal
+        // task. Whether it waits is negotiated, not fixed — the client asks
+        // through `configuration.blocking`, and the deployment's `sendMode` is
+        // only the default for a client that expresses no preference.
+        //
+        // The spec lets the server decline a blocking request ("The server may
+        // reject this if the task is long-running"), which is exactly what the
+        // timeout below does: the task keeps running and the peer polls.
+        const requested = parsed.configuration?.blocking
+        const shouldBlock = requested ?? config.sendMode === 'block'
+
+        const settlement = shouldBlock
+          ? await withTimeout(slot.settled, config.blockTimeoutMs)
+          : undefined
 
         const task = settlement === undefined
           // Not an error: the peer polls tasks/get or resubscribes, and the task

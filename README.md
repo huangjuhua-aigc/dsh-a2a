@@ -122,7 +122,7 @@ real deployment.
 
 | Method | Status |
 |---|---|
-| `message/send` | ✅ blocking or immediate |
+| `message/send` | ✅ blocking negotiated per request |
 | `message/stream` | ✅ SSE, both dialects |
 | `tasks/get` | ✅ idempotent, answers after settlement |
 | `tasks/cancel` | ✅ real cancellation, not just a dropped reply |
@@ -164,8 +164,8 @@ rendered back in whichever dialect the request used.
     rateLimitPerMinute: 60
     maxContextTurns: 5
 
-    sendMode: block           # block | immediate
-    blockTimeoutMs: 60000
+    sendMode: block           # default when the client states no preference
+    blockTimeoutMs: 60000     # after which a blocking request is declined
     contextIdleTtlMs: 1800000
     maxResidentContexts: 64
 
@@ -240,6 +240,26 @@ readable by peer B.
 - **Replies are scrubbed** of credential-shaped strings before leaving.
 - **Tool results never reach a peer** — A2A's opaque-execution principle.
 
+## Blocking is negotiated, not fixed
+
+A2A is async-first: `message/send` may answer with a non-terminal task. Whether
+it waits is settled per request, in this order:
+
+1. `params.configuration.blocking` — the client's stated preference
+2. `sendMode` — the deployment default for a client that states none
+3. `blockTimeoutMs` — after which the server declines to keep waiting
+
+Declining means answering with a **non-terminal task, not a failure**: the task
+is still running and `tasks/get` will have the result. The spec allows exactly
+this — *"The server may reject this if the task is long-running."*
+
+```jsonc
+{ "method": "message/send", "params": {
+    "message": { "kind": "message", "messageId": "m1", "role": "user",
+                 "parts": [{ "kind": "text", "text": "…" }] },
+    "configuration": { "blocking": true } } }
+```
+
 ## Task durability
 
 Task state is folded out of the session log by an `a2aTask` projection unit, so
@@ -284,7 +304,7 @@ that path is not wired yet.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 124 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
+pnpm test          # 129 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
 pnpm serve         # a real server on localhost
 ```
 
