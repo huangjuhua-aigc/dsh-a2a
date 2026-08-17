@@ -1,5 +1,5 @@
 {
-  "name": "dsh-a2a",
+  "name": "dsh-a2a-server",
   "version": "0.1.0",
   "description": "Inbound A2A (Agent2Agent) protocol server for DeepSeek Harness: publish an Agent Card and let any A2A-compliant peer submit tasks to a harness agent",
   "keywords": [
@@ -40,7 +40,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "serve": "tsx example/serve.ts",
-    "probe": "node example/probe.mjs"
+    "probe": "node example/probe.mjs",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
@@ -77,5 +78,17 @@
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "zod": "^4.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huangjuhua-aigc/dsh-a2a.git"
+  },
+  "homepage": "https://github.com/huangjuhua-aigc/dsh-a2a#readme",
+  "bugs": {
+    "url": "https://github.com/huangjuhua-aigc/dsh-a2a/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }

@@ -1,4 +1,4 @@
-<h1 align="center">dsh-a2a</h1>
+<h1 align="center">dsh-a2a-server</h1>
 
 <p align="center">
   <strong>Inbound A2A protocol server for DeepSeek Harness.</strong><br>
@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 tests">
 </p>
 
-`dsh-a2a` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+`dsh-a2a-server` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 agent reachable over the [A2A (Agent2Agent)](https://a2a-protocol.org) protocol. It
 serves an Agent Card at a well-known URI and implements the **v0.3.0 JSON-RPC
 binding**, so any compliant peer that knows the deployment's URL can discover the
@@ -32,7 +32,7 @@ adapter over `ctx.agents`, not a capability seam.
 ## Install
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a
+dsh plugin --profile web add ./path/to/dsh-a2a-server
 ```
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
@@ -133,7 +133,7 @@ another peer answers exactly as an absent one.
 
 ```yaml
 - id: a2a-server
-  name: dsh-a2a
+  name: dsh-a2a-server
   config:
     basePath: /a2a
     publicUrl: https://agents.example.com/a2a   # advertised on the card

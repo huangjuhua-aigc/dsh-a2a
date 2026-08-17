@@ -1,4 +1,4 @@
-<h1 align="center">dsh-a2a</h1>
+<h1 align="center">dsh-a2a-server</h1>
 
 <p align="center">
   <strong>为 DeepSeek Harness 提供入站 A2A 协议服务。</strong><br>
@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 项测试">
 </p>
 
-`dsh-a2a` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+`dsh-a2a-server` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 上的 agent 可以通过 [A2A（Agent2Agent）](https://a2a-protocol.org)协议被访问。它在
 well-known 路径发布 Agent Card，并实现 **v0.3.0 JSON-RPC 绑定**——任何知道本部署
 URL 的合规 peer 都能发现这个 agent 并向它提交任务。
@@ -30,7 +30,7 @@ subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力�
 ## 安装
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a
+dsh plugin --profile web add ./path/to/dsh-a2a-server
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
@@ -126,7 +126,7 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 
 ```yaml
 - id: a2a-server
-  name: dsh-a2a
+  name: dsh-a2a-server
   config:
     basePath: /a2a
     publicUrl: https://agents.example.com/a2a   # 写入 Card 的对外地址

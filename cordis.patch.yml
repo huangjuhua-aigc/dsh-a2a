@@ -9,7 +9,7 @@
 # whose injected services are absent), so nothing serves and nothing errors.
 - insert:
     - id: a2a-server
-      name: dsh-a2a
+      name: dsh-a2a-server
       config:
         basePath: /a2a
         protocolVersion: '0.3.0'

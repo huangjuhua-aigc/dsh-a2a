@@ -10,7 +10,7 @@
  * `dsh-acp` states. It exposes no editor navigation, transcript replay,
  * commands, modes, or tool presentation.
  *
- * @module dsh-a2a
+ * @module dsh-a2a-server
  */
 
 import { randomUUID } from 'node:crypto'
