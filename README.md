@@ -51,7 +51,7 @@ curl -s http://127.0.0.1:9900/a2a \
 | Method | Status |
 |---|---|
 | `message/send` | ✅ blocking or immediate |
-| `message/stream` | ✅ SSE |
+| `message/stream` | ✅ SSE, both dialects |
 | `tasks/get` | ✅ |
 | `tasks/cancel` | ✅ real cancellation, not just a dropped reply |
 | `tasks/resubscribe` | ✅ |
@@ -166,7 +166,7 @@ readable by peer B.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 89 tests: protocol, security, tasks, contexts, end-to-end
+pnpm test          # 103 tests: protocol, security, tasks, contexts, end-to-end, SSE
 pnpm serve         # a real server on localhost
 ```
 

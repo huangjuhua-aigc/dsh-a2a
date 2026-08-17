@@ -30,6 +30,8 @@ export interface Composition {
   rpcUrl: string
   /** Base URL of the Agent Card. */
   cardUrl: string
+  /** The stub adapter, so a test can hold a turn open. */
+  adapter: EchoAdapter
   /** Tear the whole tree down and settle. */
   stop: () => Promise<void>
 }
@@ -63,7 +65,8 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: '' } })
   await ctx.plugin(AgentLoop, { agents: [] })
-  ctx.llm.registerAdapter([ECHO_PROVIDER], new EchoAdapter())
+  const adapter = new EchoAdapter()
+  ctx.llm.registerAdapter([ECHO_PROVIDER], adapter)
 
   // `CredentialProvider` is the abstract Service Definition; only the local
   // file-backed provider is mountable. It layers the process environment over
@@ -119,6 +122,7 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const origin = `http://127.0.0.1:${port}`
   return {
     ctx,
+    adapter,
     port,
     rpcUrl: `${origin}/a2a`,
     cardUrl: `${origin}/.well-known/agent-card.json`,

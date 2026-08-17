@@ -46,10 +46,40 @@ export class EchoAdapter extends LlmAdapter {
       .join('\n') ?? ''
     const reply = `echo: ${echoed}`
 
+    // A gate lets a test hold the turn open so it can observe a task that is
+    // genuinely still `working` — otherwise the echo settles before the
+    // stream is even read, and nothing about in-flight behavior gets covered.
+    if (this.gate !== undefined) {
+      await new Promise<void>((resolve, reject) => {
+        if (options.signal?.aborted === true) {
+          reject(new Error('aborted'))
+          return
+        }
+        options.signal?.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
+        void this.gate?.then(resolve, reject)
+      })
+    }
+
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'text-delta', index: 0, text: reply }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: reply } }
     yield { type: 'usage', usage: { inputTokens: 1, outputTokens: reply.length } }
     yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+
+  /** When set, `stream()` waits on it before emitting anything. */
+  private gate: Promise<void> | undefined
+
+  /**
+   * Hold every subsequent turn open until the returned function is called.
+   * @returns the release function.
+   */
+  hold(): () => void {
+    let release: (() => void) | undefined
+    this.gate = new Promise<void>((resolve) => { release = resolve })
+    return () => {
+      this.gate = undefined
+      release?.()
+    }
   }
 }
