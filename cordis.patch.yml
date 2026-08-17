@@ -1,0 +1,26 @@
+# The layer this bundle contributes when a profile lists it.
+#
+# The workspace root and peer table have no safe defaults, so a deployment must
+# supply them: isolation.workspaceRoot is required, and an empty peers table
+# means every request is answered 401.
+- insert:
+    - id: a2a-server
+      name: dsh-a2a
+      config:
+        basePath: /a2a
+        protocolVersion: '0.3.0'
+        card:
+          name: dsh-harness
+          description: A DeepSeek Harness agent reachable over A2A.
+          public: true
+          skills: []
+        peers: {}
+        isolation:
+          # Default posture is isolation: each peer gets its own working
+          # directory, which also makes the cwd-equality authority in
+          # cross-session tooling separate peers for free. A deployment whose
+          # peers collaborate on one repository must say so explicitly.
+          workspaceMode: per-peer
+          workspaceRoot: !!js `${process.env.DSH_HOME ?? process.env.HOME}/a2a-workspaces`
+        push:
+          enabled: false
