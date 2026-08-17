@@ -39,7 +39,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "serve": "tsx example/serve.ts"
+    "serve": "tsx example/serve.ts",
+    "probe": "node example/probe.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.1",

@@ -73,6 +73,19 @@ $poll = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $
 $poll.result | ConvertTo-Json -Depth 5
 ```
 
+### One-shot probe
+
+With a server running, sweep every documented behavior and get a pass/fail
+checklist. Plain Node, so the JSON payloads dodge both shells' quoting rules:
+
+```sh
+pnpm probe                                        # defaults to :9922 / demo123
+node example/probe.mjs http://127.0.0.1:9922 demo123
+```
+
+It exits non-zero on any mismatch, so it also works as a smoke check against a
+real deployment.
+
 ## What it serves
 
 | Route | Purpose |
