@@ -216,7 +216,7 @@ src/
 
 ```yaml
 # ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: 9f3c1e7a2b8d4f60a15e93c7d2b48f61
+A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 ```
 
 引用名必须是 POSIX 标识符——所以把真 token 粘进 `tokenEnv` 会在加载期直接失败，而不是悄悄变成一个永远解析不出来的查找键。轮换不需要重启：凭据是每请求解析的。

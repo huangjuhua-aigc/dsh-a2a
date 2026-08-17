@@ -254,7 +254,7 @@ Configuration carries **references**; values live with the credential provider:
 
 ```yaml
 # ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: 9f3c1e7a2b8d4f60a15e93c7d2b48f61
+A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 ```
 
 The reference must be a POSIX identifier, so pasting a real token into
