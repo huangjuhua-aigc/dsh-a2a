@@ -93,8 +93,8 @@ async function settledOutput(task) {
   if (task === undefined) return ''
   const fromSend = task.artifacts?.[0]?.parts?.[0]?.text
   if (typeof fromSend === 'string' && fromSend.length > 0) return fromSend
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await new Promise(resolve => setTimeout(resolve, 100))
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 500))
     const polled = await rpc({ jsonrpc: '2.0', id: 900, method: 'tasks/get', params: { taskId: task.id } })
     const text = polled.body.result?.artifacts?.[0]?.parts?.[0]?.text
     if (typeof text === 'string' && text.length > 0) return text
@@ -125,6 +125,7 @@ try {
 console.log('Discovery')
 const cardResponse = await fetch(`${origin}/.well-known/agent-card.json`)
 const card = await cardResponse.json()
+console.log(`  [90magent: ${card.name} ${card.version}[0m`)
 check('agent card served anonymously', cardResponse.status === 200)
 check('protocolVersion', card.protocolVersion === '0.3.0', card.protocolVersion)
 check('preferredTransport JSONRPC', card.preferredTransport === 'JSONRPC')
@@ -227,13 +228,16 @@ check('unsupported A2A-Version is -32602', badVersion.body.error?.code === -3260
 
 // ── Content types ────────────────────────────────────────────────────────
 console.log('\nContent types')
+// These ask the model a question only answerable from the non-text part, which
+// is what actually needs proving: that the part reached the request at all.
+// Asserting on the reply's FORMAT would only ever describe the stub.
 const withFile = await rpc({
   jsonrpc: '2.0', id: 50, method: 'message/send',
   params: {
     message: {
       kind: 'message', messageId: 'probe-file', role: 'user',
       parts: [
-        { kind: 'text', text: 'see this' },
+        { kind: 'text', text: 'Reply with only the filename attached to this message. No other words.' },
         { kind: 'file', file: { name: 'a.txt', mimeType: 'text/plain', uri: 'https://x/a.txt' } },
       ],
     },
@@ -242,18 +246,21 @@ const withFile = await rpc({
 // In `immediate` mode the send response is non-terminal and carries no
 // artifacts yet, so the result must be read back rather than assumed.
 const fileText = await settledOutput(withFile.body.result)
-check('file part reaches the model as a reference', fileText.includes('[file name=a.txt'), fileText)
+check('file part reaches the model', fileText.includes('a.txt'), fileText.slice(0, 80))
 const withData = await rpc({
   jsonrpc: '2.0', id: 51, method: 'message/send',
   params: {
     message: {
       kind: 'message', messageId: 'probe-data', role: 'user',
-      parts: [{ kind: 'data', data: { n: 42 } }],
+      parts: [
+        { kind: 'text', text: 'Reply with only the value of n. Digits only.' },
+        { kind: 'data', data: { n: 42 } },
+      ],
     },
   },
 })
 const dataText = await settledOutput(withData.body.result)
-check('data part reaches the model as JSON', dataText.includes('[data {"n":42}]'), dataText)
+check('data part reaches the model', dataText.includes('42'), dataText.slice(0, 80))
 const flattened = await rpc({
   jsonrpc: '2.0', id: 52, method: 'message/send',
   params: { message: { messageId: 'probe-flat', role: 'ROLE_USER', parts: [{ text: 'flat part' }] } },

@@ -116,7 +116,10 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 ```
 
 It exits non-zero on any mismatch, so it also works as a smoke check against a
-real deployment.
+real deployment. The 48 checks run against whichever model the server is on:
+where a check needs to prove a non-text part reached the request, it asks the
+model a question only that part can answer rather than matching reply text,
+which would only ever describe one particular model.
 
 ## What it serves
 
