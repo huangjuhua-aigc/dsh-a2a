@@ -203,6 +203,11 @@ Task state is folded out of the session log by an `a2aTask` projection unit, so
 polling path usable at all. `message/stream` and push notifications are optional
 A2A capabilities; `tasks/get` is the baseline every peer can rely on.
 
+The terminal edge carries the agent's committed output, not just the state — the
+projection contract's whole-value rule. Without it a polling peer would receive
+`completed` with an empty artifact list, which reads as "it worked and produced
+nothing" rather than prompting a retry.
+
 The projection registry (`ctx.sessionProjections`) is an optional dependency. A
 composition without it still serves, but logs a warning and cannot answer for a
 task once it settles.
@@ -228,7 +233,7 @@ that path is not wired yet.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 122 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
+pnpm test          # 124 tests: protocol, security, tasks, contexts, projection, end-to-end, SSE, polling
 pnpm serve         # a real server on localhost
 ```
 

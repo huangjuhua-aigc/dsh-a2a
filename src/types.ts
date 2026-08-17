@@ -37,6 +37,16 @@ declare module '@deepseek-ai/dsh-session/types' {
       turn?: number
       /** Terminal edges only: the real harness turn ending, for Task.metadata. */
       stopReason?: string
+      /**
+       * Terminal edges only: the committed assistant text this task produced.
+       *
+       * Carried on the edge rather than derived later because of the
+       * projection contract's whole-value rule — a state-carrying event must
+       * hold the complete post-change state. Without it a peer polling
+       * `tasks/get` gets `completed` and an empty artifact list, which reads as
+       * "it worked and produced nothing" rather than "ask again".
+       */
+      output?: string
     }
   }
 }

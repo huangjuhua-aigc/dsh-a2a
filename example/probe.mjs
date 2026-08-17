@@ -82,6 +82,26 @@ async function stream(body) {
   return { contentType: response.headers.get('content-type'), frames }
 }
 
+/**
+ * Return a task's committed output text, polling when the send was non-terminal.
+ *
+ * `sendMode: immediate` hands back a `working` task with no artifacts, so a
+ * probe that read artifacts straight off the send response would report a
+ * failure that is really just the deployment's send mode.
+ */
+async function settledOutput(task) {
+  if (task === undefined) return ''
+  const fromSend = task.artifacts?.[0]?.parts?.[0]?.text
+  if (typeof fromSend === 'string' && fromSend.length > 0) return fromSend
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const polled = await rpc({ jsonrpc: '2.0', id: 900, method: 'tasks/get', params: { taskId: task.id } })
+    const text = polled.body.result?.artifacts?.[0]?.parts?.[0]?.text
+    if (typeof text === 'string' && text.length > 0) return text
+  }
+  return ''
+}
+
 console.log(`\nProbing ${origin}\n`)
 
 // Preflight: a refused connection is the overwhelmingly common failure here,
@@ -155,6 +175,9 @@ check('reports a terminal state', ['completed', 'failed', 'canceled', 'rejected'
 const polledAgain = await rpc({ jsonrpc: '2.0', id: 12, method: 'tasks/get', params: { taskId: task.id } })
 check('idempotent across repeated polls',
   polledAgain.body.result?.status?.state === polled.body.result?.status?.state)
+check('carries the agent output, not just the state',
+  (polled.body.result?.artifacts?.[0]?.parts?.[0]?.text ?? '').length > 0,
+  polled.body.result?.artifacts?.[0]?.parts?.[0]?.text)
 const missing = await rpc({ jsonrpc: '2.0', id: 13, method: 'tasks/get', params: { taskId: 'never-existed' } })
 check('unknown task is -32001', missing.body.error?.code === -32001)
 
@@ -216,7 +239,9 @@ const withFile = await rpc({
     },
   },
 })
-const fileText = withFile.body.result?.artifacts?.[0]?.parts?.[0]?.text ?? ''
+// In `immediate` mode the send response is non-terminal and carries no
+// artifacts yet, so the result must be read back rather than assumed.
+const fileText = await settledOutput(withFile.body.result)
 check('file part reaches the model as a reference', fileText.includes('[file name=a.txt'), fileText)
 const withData = await rpc({
   jsonrpc: '2.0', id: 51, method: 'message/send',
@@ -227,8 +252,8 @@ const withData = await rpc({
     },
   },
 })
-check('data part reaches the model as JSON',
-  (withData.body.result?.artifacts?.[0]?.parts?.[0]?.text ?? '').includes('[data {"n":42}]'))
+const dataText = await settledOutput(withData.body.result)
+check('data part reaches the model as JSON', dataText.includes('[data {"n":42}]'), dataText)
 const flattened = await rpc({
   jsonrpc: '2.0', id: 52, method: 'message/send',
   params: { message: { messageId: 'probe-flat', role: 'ROLE_USER', parts: [{ text: 'flat part' }] } },

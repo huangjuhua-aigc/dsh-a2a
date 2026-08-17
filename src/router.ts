@@ -318,7 +318,11 @@ export function createRouter(deps: RouterDeps): Router {
         ))
       }
       const projected = deps.readProjectedTask?.(activation, taskId)
-      if (projected !== undefined) return projected
+      // Text read back from the log leaves the process just like live text
+      // does, so it goes through the same scrub.
+      if (projected !== undefined) {
+        return { ...projected, artifacts: redactArtifacts(projected.artifacts ?? []) }
+      }
     }
     throw taskNotFound(taskId)
   }

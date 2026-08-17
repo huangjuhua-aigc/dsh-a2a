@@ -215,7 +215,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     activation: Activation,
     taskId: A2ATaskId,
     state: A2ATaskState,
-    extra: { turn?: number; stopReason?: string } = {},
+    extra: { turn?: number; stopReason?: string; output?: string } = {},
   ): void => {
     try {
       activation.agent.session.append('a2a/task', {
@@ -224,6 +224,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         state,
         ...extra.turn === undefined ? {} : { turn: extra.turn },
         ...extra.stopReason === undefined ? {} : { stopReason: extra.stopReason },
+        ...extra.output === undefined ? {} : { output: extra.output },
       })
     } catch (error: unknown) {
       // A log append failure must not take down the request: the peer still
@@ -299,10 +300,17 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   ): void {
     if (slot.done) return
     activation.slots.delete(slot.taskId)
-    appendTaskEdge(activation, slot.taskId, state, stopReason === undefined ? {} : { stopReason })
+    const artifacts = artifactsFromTexts(slot.taskId, slot.texts)
+    // The terminal edge carries the output, so the projection can serve the
+    // ANSWER to a polling peer and not merely the fact that work finished.
+    const output = slot.texts.filter(text => text.length > 0).join('\n')
+    appendTaskEdge(activation, slot.taskId, state, {
+      ...stopReason === undefined ? {} : { stopReason },
+      ...output.length === 0 ? {} : { output },
+    })
     slot.settle({
       state,
-      artifacts: artifactsFromTexts(slot.taskId, slot.texts),
+      artifacts,
       ...stopReason === undefined ? {} : { stopReason },
     })
   }
@@ -399,7 +407,13 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       id: taskId,
       contextId: activation.contextId,
       status: { state: view.state, timestamp: view.updatedAt },
-      artifacts: [],
+      artifacts: view.output === undefined || view.output.length === 0
+        ? []
+        : [{
+          artifactId: `${taskId}-result`,
+          name: 'result',
+          parts: [{ kind: 'text', text: view.output }],
+        }],
       ...view.stopReason === undefined ? {} : { metadata: { dsh: { stopReason: view.stopReason } } },
     }
   }

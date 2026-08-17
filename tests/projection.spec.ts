@@ -15,7 +15,7 @@ import type { A2ATaskState } from '../src/protocol/index.ts'
 function edge(
   taskId: string,
   state: A2ATaskState,
-  extra: { peer?: string; stopReason?: string } = {},
+  extra: { peer?: string; stopReason?: string; output?: string } = {},
 ): SessionEvent {
   return {
     type: 'a2a/task',
@@ -24,6 +24,7 @@ function edge(
       peer: extra.peer ?? 'alice',
       state,
       ...extra.stopReason === undefined ? {} : { stopReason: extra.stopReason },
+      ...extra.output === undefined ? {} : { output: extra.output },
     },
   } as unknown as SessionEvent
 }
@@ -67,6 +68,16 @@ describe('folding task lifecycle', () => {
     state = a2aTaskProjection.apply(state, edge('t1', 'completed', { stopReason: 'stop' }))
     expect(state.tasks['t1']?.state).toBe('completed')
     expect(state.tasks['t1']?.stopReason).toBe('stop')
+  })
+
+  it('carries the committed output on the terminal edge', () => {
+    // The projection contract's whole-value rule: a state-carrying event must
+    // hold the complete post-change state, so the fold can serve the answer
+    // without reaching back into the message log.
+    let state = a2aTaskProjection.init()
+    state = a2aTaskProjection.apply(state, edge('t1', 'working'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'completed', { output: 'the answer is 42' }))
+    expect(state.tasks['t1']?.output).toBe('the answer is 42')
   })
 
   it('keeps tasks independent within one session', () => {

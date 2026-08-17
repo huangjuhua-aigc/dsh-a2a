@@ -86,6 +86,22 @@ describe('the polling path', () => {
     expect(polled['result'].id).toBe(taskId)
   })
 
+  it('returns the agent OUTPUT, not just the terminal state', async () => {
+    // A `completed` task with an empty artifact list reads as "it worked and
+    // produced nothing" — worse than an error, because the peer believes it.
+    const sent = await rpc({
+      jsonrpc: '2.0', id: 1, method: 'message/send',
+      params: { message: { kind: 'message', messageId: 'm1', role: 'user', parts: [{ kind: 'text', text: 'what is the answer' }] } },
+    })
+    const taskId = sent['result'].id as string
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    const polled = await rpc({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId } })
+    const text = polled['result'].artifacts?.[0]?.parts?.[0]?.text as string | undefined
+    expect(text).toBeTruthy()
+    expect(text).toContain('what is the answer')
+  })
+
   it('stays idempotent across repeated polls of a settled task', async () => {
     const sent = await rpc({
       jsonrpc: '2.0', id: 1, method: 'message/send',

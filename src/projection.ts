@@ -27,6 +27,14 @@ export interface A2ATaskView {
   peer: string
   state: A2ATaskState
   /**
+   * The committed assistant text, when the terminal edge recorded any.
+   *
+   * This is what lets a polling peer receive the ANSWER rather than only the
+   * fact that the task finished — an empty artifact list on a `completed` task
+   * reads as "it worked and produced nothing".
+   */
+  output?: string | undefined
+  /**
    * The harness turn ending, when the terminal edge recorded one.
    *
    * Explicitly `| undefined` because the value round-trips through a zod schema
@@ -61,6 +69,7 @@ export const A2A_TASK_VIEW_SCHEMA = z.object({
     taskId: z.string(),
     peer: z.string(),
     state: z.enum(STATES),
+    output: z.string().optional(),
     stopReason: z.string().optional(),
     updatedAt: z.string(),
   })),
@@ -78,6 +87,7 @@ interface TaskEdge {
   state: A2ATaskState
   turn?: number
   stopReason?: string
+  output?: string
 }
 
 /**
@@ -125,6 +135,7 @@ export const a2aTaskProjection = {
           taskId: data.taskId,
           peer: data.peer,
           state: data.state,
+          ...data.output === undefined ? {} : { output: data.output },
           ...data.stopReason === undefined ? {} : { stopReason: data.stopReason },
           // The log has no wall-clock of its own, so the fold stamps when it
           // observed the edge. A replay therefore restamps; consumers use this
