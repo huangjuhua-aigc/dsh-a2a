@@ -13,6 +13,7 @@
 <p align="center"><sub>社区维护的插件，并非 DeepSeek 官方产品。</sub></p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm 版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC 绑定">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
@@ -30,11 +31,17 @@ subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力�
 ## 安装
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a-server
+dsh plugin --profile web add dsh-a2a-server
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
 `dsh.profile.bundles`——因为包中声明了 `dsh.bundle`。
+
+若想直接使用本地检出，把路径指过去即可：
+
+```sh
+dsh plugin --profile web add ./path/to/dsh-a2a-server
+```
 
 | 依赖 | 由谁提供 |
 | --- | --- |

@@ -13,6 +13,7 @@
 <p align="center"><sub>A community plugin, not an official DeepSeek product.</sub></p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
@@ -32,11 +33,17 @@ adapter over `ctx.agents`, not a capability seam.
 ## Install
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a-server
+dsh plugin --profile web add dsh-a2a-server
 ```
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
 bundle to `dsh.profile.bundles`, because the package declares `dsh.bundle`.
+
+To work from a checkout instead, point it at the directory:
+
+```sh
+dsh plugin --profile web add ./path/to/dsh-a2a-server
+```
 
 | Requirement | Supplied by |
 | --- | --- |
