@@ -1,151 +1,283 @@
-# dsh-a2a
+<h1 align="center">dsh-a2a</h1>
 
-English · [简体中文](README.zh-CN.md)
+<p align="center">
+  <strong>Inbound A2A protocol server for DeepSeek Harness.</strong><br>
+  Publish an Agent Card, accept tasks from any compliant peer.<br>
+  Everything is a plugin — this is one.
+</p>
 
-Inbound [A2A (Agent2Agent)](https://a2a-protocol.org) protocol server for
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Publishes an
-Agent Card at a well-known URI and serves the **v0.3.0 JSON-RPC binding**, so any
-compliant peer that knows this deployment's URL can discover it and submit tasks
-to a harness agent.
+<p align="center"><sub>A community plugin, not an official DeepSeek product. English · <a href="README.zh-CN.md">中文</a></sub></p>
 
-**Inbound only.** This plugin never connects to another agent: there is no client,
-no peer directory, and no A2A subagent provider. It is a transport adapter, not a
-capability seam.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC binding">
+  <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
+  <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 tests">
+</p>
+
+`dsh-a2a` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+agent reachable over the [A2A (Agent2Agent)](https://a2a-protocol.org) protocol. It
+serves an Agent Card at a well-known URI and implements the **v0.3.0 JSON-RPC
+binding**, so any compliant peer that knows the deployment's URL can discover the
+agent and submit tasks to it.
+
+The plugin is **inbound only**: it never connects to another agent. There is no
+client, no peer directory, and no A2A subagent provider. It is a transport
+adapter over `ctx.agents`, not a capability seam.
 
 ## Install
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a   # local checkout
-dsh plugin --profile web add dsh-a2a             # once published
+dsh plugin --profile web add ./path/to/dsh-a2a
 ```
-
-> Not on npm yet. Use the local-checkout form; `npm pack` verifies the tarball
-> already carries `lib/` and `cordis.patch.yml`, so publishing is the only
-> remaining step.
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
 bundle to `dsh.profile.bundles`, because the package declares `dsh.bundle`.
-Then configure the layer (see [Configuration](#configuration)).
 
-### Pick a profile that has an HTTP carrier
+| Requirement | Supplied by |
+| --- | --- |
+| `ctx.agents` | `dsh-base` |
+| `ctx.credentials` | `dsh-base` |
+| `ctx.webServer` | **`dsh-web-app`** |
+| `ctx.sessionProjections` (optional) | composition; enables `tasks/get` after settlement |
 
-The plugin injects `ctx.agents`, `ctx.webServer`, and `ctx.credentials`, and
-stays PENDING until all three exist. **`ctx.webServer` ships in `dsh-web-app`,
-not in `dsh-base`** — so on a `headless` profile this bundle loads and then sits
-there: nothing serves, and nothing errors, because a PENDING fiber is a normal
-Cordis state rather than a failure.
+The plugin stays PENDING until the three required services exist. `ctx.webServer`
+ships in `dsh-web-app` rather than `dsh-base`, so a `headless` profile needs
+`@deepseek-ai/dsh-host-webserver` mounted before this bundle serves anything.
+`dsh --profile <name> --dump-config` prints the composed rows.
 
-| Profile | Result |
-|---|---|
-| `web` | works |
-| `headless` | PENDING — mount `@deepseek-ai/dsh-host-webserver` first |
+## Quick start
 
-`dsh --profile <name> --dump-config` prints the composed rows, which is the
-quickest way to confirm the carrier is there.
-
-## Try it locally
-
-The demo always runs a real model — `deepseek-official/deepseek-v4-flash`, or
-whatever `DEEPSEEK_MODEL` names. A missing credential is an error, not a silent
-fall back to a stub that would answer nothing useful.
-
-The credential is resolved through `ctx.credentials`, so it may live in the
-process environment, `$DSH_HOME/.credentials.yaml`, or either `.env` layer —
-whichever a harness install already uses works here unchanged. The test suite
-forces the stub instead: a real model would make assertions about exact reply
-text meaningless and would spend tokens on every run.
-
-`A2A_SEND_MODE=immediate` is what exercises the polling path: the peer gets a
-non-terminal task and must come back with `tasks/get` for the result.
-
-### bash / zsh
+The bundled example composition runs a real model and a listening server.
 
 ```sh
 pnpm install
-A2A_PEER_ALICE=demo123 A2A_PORT=9922 A2A_SEND_MODE=immediate pnpm serve
+A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve
 ```
+
+```powershell
+$env:A2A_PEER_ALICE = "demo123"
+$env:A2A_PORT = "9922"
+pnpm serve
+```
+
+The model credential is resolved through `ctx.credentials`, so an existing
+`DEEPSEEK_API_KEY` in the harness home, either `.env` layer, or the process
+environment is picked up unchanged. A missing credential fails the boot.
+
+Fetch the card and submit a task:
 
 ```sh
 curl -s http://127.0.0.1:9922/.well-known/agent-card.json
 
-curl -s http://127.0.0.1:9922/a2a   -H "authorization: Bearer demo123"   -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
+curl -s http://127.0.0.1:9922/a2a \
+  -H "authorization: Bearer demo123" \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
         "message":{"kind":"message","messageId":"m1","role":"user",
                    "parts":[{"kind":"text","text":"hello"}]}}}'
 ```
 
-### PowerShell
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `A2A_PEER_ALICE` | — | Bearer token for the demo peer; required |
+| `A2A_PORT` | `9900` | Listening port |
+| `A2A_SEND_MODE` | `block` | `block` or `immediate` |
+| `A2A_WORKSPACE_ROOT` | temp dir | Parent of the per-peer working directories |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model id requested from the adapter |
 
-PowerShell has no `VAR=value cmd` prefix — set the variables first. And `curl`
-is an alias for `Invoke-WebRequest`, so call `curl.exe` explicitly or use
-`Invoke-RestMethod`.
-
-```powershell
-pnpm install
-$env:A2A_PEER_ALICE = "demo123"
-$env:A2A_PORT = "9922"
-$env:A2A_SEND_MODE = "immediate"
-pnpm serve
-```
-
-In a second terminal:
-
-```powershell
-curl.exe -s http://127.0.0.1:9922/.well-known/agent-card.json
-
-$h = @{ authorization = "Bearer demo123" }
-$body = '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}}'
-$sent = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' -Body $body
-$sent.result | ConvertTo-Json -Depth 5
-
-# The task is settled by now and its slot is gone; this answer comes from the
-# projection folded over the session log.
-$taskId = $sent.result.id
-$poll = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' `
-  -Body "{`"jsonrpc`":`"2.0`",`"id`":2,`"method`":`"tasks/get`",`"params`":{`"taskId`":`"$taskId`"}}"
-$poll.result | ConvertTo-Json -Depth 5
-```
-
-### One-shot probe
-
-With a server running, sweep every documented behavior and get a pass/fail
-checklist. Plain Node, so the JSON payloads dodge both shells' quoting rules:
+A one-shot probe runs 48 checks against a live server and exits non-zero on any
+mismatch:
 
 ```sh
 pnpm probe                                        # defaults to :9922 / demo123
 node example/probe.mjs http://127.0.0.1:9922 demo123
 ```
 
-It exits non-zero on any mismatch, so it also works as a smoke check against a
-real deployment. The 48 checks run against whichever model the server is on:
-where a check needs to prove a non-text part reached the request, it asks the
-model a question only that part can answer rather than matching reply text,
-which would only ever describe one particular model.
+## Interface
 
-## What it serves
+| Route | Method | Auth |
+| --- | --- | --- |
+| `/.well-known/agent-card.json` | GET | Public by default |
+| `/.well-known/agent.json` | GET | Public by default |
+| `{basePath}` (default `/a2a`) | POST | Bearer required |
 
-| Route | Purpose |
-|---|---|
-| `GET /.well-known/agent-card.json` | Agent Card (v0.3 canonical path) |
-| `GET /.well-known/agent.json` | Same card, pre-0.3 clients |
-| `POST /a2a` | JSON-RPC endpoint; SSE methods answer on the same route |
+| JSON-RPC method | v1.0 alias | Status |
+| --- | --- | --- |
+| `message/send` | `SendMessage` | Blocking negotiated per request |
+| `message/stream` | `SendStreamingMessage` | SSE |
+| `tasks/get` | `GetTask` | Idempotent; answers after settlement |
+| `tasks/cancel` | `CancelTask` | Cancels the running turn |
+| `tasks/resubscribe` | `SubscribeToTask` | Live stream, or one terminal frame |
+| `tasks/pushNotificationConfig/*` | `*TaskPushNotificationConfig` | `-32003` |
+| `tasks/list` | `ListTasks` | `-32601` |
+| `agent/getAuthenticatedExtendedCard` | `GetExtendedAgentCard` | `-32601` |
 
-| Method | Status |
-|---|---|
-| `message/send` | ✅ blocking negotiated per request |
-| `message/stream` | ✅ SSE, both dialects |
-| `tasks/get` | ✅ idempotent, answers after settlement |
-| `tasks/cancel` | ✅ real cancellation, not just a dropped reply |
-| `tasks/resubscribe` | ✅ live task, or one terminal frame for a settled one |
-| `tasks/pushNotificationConfig/*` | ⛔ `-32003`; card advertises `pushNotifications: false` |
-| `tasks/list` · `ListTasks` | ⛔ `-32601`; v1.0-only, not served |
-| `agent/getAuthenticatedExtendedCard` | ⛔ `-32601`; no extended card |
+Both dialects are accepted. v0.3 (`message/send`, `"working"`, `kind`-tagged
+parts) is the mainline; the v1.0 spellings (`SendMessage`, `TASK_STATE_WORKING`,
+member-presence parts) are normalized inbound and rendered back in whichever
+dialect the request used.
 
-Both dialects are accepted: v0.3 (`message/send`, `"working"`, `kind`-tagged
-parts) is the mainline, and the v1.0 spellings (`SendMessage`,
-`TASK_STATE_WORKING`, member-presence parts) are normalized on the way in and
-rendered back in whichever dialect the request used.
+Inbound messages may carry text, file, and data parts. File and data parts are
+rendered into the model's context as bracketed references. Replies are text.
 
-## How it works
+Authentication, rate limiting, and the trust gate answer with HTTP `401`, `429`,
+and `403`; the body remains a valid JSON-RPC error envelope. A task belonging to
+another peer answers exactly as an absent one.
+
+## Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Discovery</h3>
+      <p>A dynamic Agent Card at the v0.3 well-known path, plus the pre-0.3 path for older clients. Skills are declared in configuration rather than projected from the live tool registry, so the public card carries no inventory of installed tools.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Negotiated blocking</h3>
+      <p>A2A is async-first. Whether <code>message/send</code> waits is settled per request: the client's <code>configuration.blocking</code> wins, <code>sendMode</code> is the default, and <code>blockTimeoutMs</code> declines by answering with a non-terminal task that keeps running.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Durable task state</h3>
+      <p>Every lifecycle transition is an <code>a2a/task</code> session event, folded by a projection unit into the read model <code>tasks/get</code> serves. The terminal edge carries the agent's committed output, so a polling peer receives the result and not only the state.</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Peer isolation</h3>
+      <p>Each authenticated identity gets its own context, its own tasks, and — by default — its own working directory. Cross-session tooling authorizes by exact <code>cwd</code> equality, so distinct workspaces isolate peers through the mechanism already in the harness.</p>
+    </td>
+  </tr>
+</table>
+
+## Configuration
+
+```yaml
+- id: a2a-server
+  name: dsh-a2a
+  config:
+    basePath: /a2a
+    publicUrl: https://agents.example.com/a2a   # advertised on the card
+    protocolVersion: 0.3.0
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+    card:
+      name: dsh-harness
+      description: Reads code, runs commands, reports findings.
+      public: true
+      skills:
+        - id: general
+          name: general
+          description: General-purpose task execution.
+          tags: [coding, research]
+      provider:
+        organization: Example Inc.
+        url: https://example.com
+
+    peers:
+      alice: { tokenEnv: A2A_PEER_ALICE }
+      bob:   { tokenEnv: A2A_PEER_BOB }
+    trustedPeers: [alice]
+    rateLimitPerMinute: 60
+    maxContextTurns: 5
+
+    sendMode: block
+    blockTimeoutMs: 60000
+    contextIdleTtlMs: 1800000
+    maxResidentContexts: 64
+
+    isolation:
+      workspaceMode: per-peer
+      workspaceRoot: /srv/dsh/a2a
+      peerWorkspaces:
+        alice: /srv/project
+
+    push:
+      enabled: false
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `basePath` | `/a2a` | JSON-RPC route |
+| `publicUrl` | derived from `Host` | Routable URL published on the card |
+| `protocolVersion` | `0.3.0` | Version advertised on the card |
+| `provider` · `model` | — | Model route for every agent this server creates |
+| `card.public` | `true` | Serve the card without a credential |
+| `card.skills` | `[]` | Declared skills; falls back to one `general` entry |
+| `peers` | `{}` | Identity → credential **reference name** |
+| `trustedPeers` | all authenticated | Allow-list of identities that may run tasks |
+| `rateLimitPerMinute` | `60` | Sliding window per identity |
+| `maxContextTurns` | `5` | Messages accepted per context before `rejected` |
+| `sendMode` | `block` | Default when the client states no preference |
+| `blockTimeoutMs` | `60000` | After which a blocking request is declined |
+| `contextIdleTtlMs` | `1800000` | Idle time before a context's agent is released |
+| `maxResidentContexts` | `64` | Ceiling on resident contexts |
+| `isolation.workspaceMode` | `per-peer` | `per-peer` or `shared` |
+| `isolation.workspaceRoot` | — | Required; parent directory or shared cwd |
+| `isolation.peerWorkspaces` | `{}` | Per-identity working-directory override |
+| `push.enabled` | `false` | Reserved; see [Boundaries](#boundaries) |
+
+Configuration is refused at load when `isolation.workspaceRoot` is absent, a peer
+name is not `[A-Za-z0-9][A-Za-z0-9_-]*`, a `tokenEnv` is not a POSIX identifier,
+`trustedPeers` or `peerWorkspaces` names an undeclared peer, or `basePath` does
+not start with `/`.
+
+### Credentials
+
+Configuration carries credential **references**, never values:
+
+```yaml
+peers:
+  alice: { tokenEnv: A2A_PEER_ALICE }
+```
+
+```yaml
+# ~/.dsh/.credentials.yaml
+A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
+```
+
+`ctx.credentials` resolves the reference per request across four layers — the
+process environment, the managed document, `<cwd>/.env`, and `$DSH_HOME/.env` —
+so rotating a token takes effect on the next request without a restart. Peer
+identity comes from the presented credential only; nothing in a request body can
+assert it. There is no shared bearer token: isolation is built on distinct
+identities.
+
+## Isolation
+
+| Layer | Guarantee | Mechanism |
+| --- | --- | --- |
+| Model context | One peer's conversation cannot enter another's model request | Separate `contextId` → separate Session → separate log |
+| Protocol access | A peer cannot read, continue, or cancel another's context or task | Ownership by authenticated identity |
+| Tooling | A peer's agent cannot use tools to read another peer's session | `workspaceMode: per-peer` |
+
+`per-peer` (the default) derives each identity's `cwd` from `workspaceRoot`.
+`shared` places every peer in one directory, which suits peers collaborating on a
+single repository; under it, files written by one peer are readable by another.
+
+## Boundaries
+
+- Inbound only. No outbound client, peer directory, or A2A subagent provider.
+- JSONRPC binding only. gRPC and HTTP+JSON are not served, and the card says so.
+- Push notifications are not implemented. `push.enabled` selects which error the
+  push methods return; the card advertises `pushNotifications: false`.
+- No extended Agent Card, `stateTransitionHistory`, protocol extensions, or card
+  signatures.
+- Streaming emits committed assistant messages. Per-chunk streaming is not
+  implemented.
+- No orphan-task watchdog: a task wedged non-terminal stays that way.
+- Cross-session tool denial is not implemented; isolation rests on
+  `workspaceMode`.
+- A token ceiling settles a task as `completed`; the real turn ending travels in
+  `Task.metadata.dsh.stopReason`, which A2A's state enum cannot express.
+- Task state survives settlement but not a process restart: session persistence
+  is not composed, so the projection has no log to cold-fold after a reboot.
+- `ctx.webServer` provides no TLS. Any non-loopback exposure belongs behind a
+  reverse proxy.
+- A configuration change restarts the plugin and cancels in-flight tasks.
+
+## Architecture
 
 ```
 src/
@@ -165,216 +297,48 @@ src/
 └── types.ts           declaration merges into SessionEventMap / MessageSourceMap
 ```
 
-Three decisions shape everything else:
-
 **A task is an interval, not a turn.** One submitted message may span several
-turns if tools queue more work, so settlement uses three hooks rather than one:
-`agent/inbox/claimed` binds the message to a turn, `turn/end` records that
-turn's ending, and `agent.whenIdle()` settles once the whole agent is quiet. A
-model error fails immediately; a token ceiling settles as `completed` with the
-real ending in `Task.metadata.dsh.stopReason`, because A2A's state enum cannot
-express it.
+turns if tools queue more work, so settlement uses three hooks:
+`agent/inbox/claimed` binds the message to a turn, `turn/end` records that turn's
+ending, and `agent.whenIdle()` settles once the whole agent is quiet.
 
-**Task state lives in the session log.** Each lifecycle edge is an `a2a/task`
-event, and a projection unit folds them into the read model `tasks/get` serves.
-The terminal edge carries the agent's committed output too — the projection
-contract's whole-value rule — so a polling peer receives the answer and not just
-the fact that work finished.
+**Task state lives in the session log.** Lifecycle transitions are `a2a/task`
+events; a projection unit folds them into the read model. The terminal edge
+carries the committed output, so the fold serves the answer without reaching
+back into message history.
 
-**HTTP has no connection lifetime, so residency is explicit.** Each `contextId`
-maps to an Activation that is evicted when idle, leaving the durable Session
-behind. This is the one place the design departs from `dsh-acp`, whose stdio
-connection owns its sessions.
-
-## Configuration
-
-```yaml
-- id: a2a-server
-  name: dsh-a2a
-  config:
-    basePath: /a2a
-    publicUrl: https://agents.example.com/a2a   # behind a reverse proxy
-    protocolVersion: 0.3.0    # advertised on the card
-    provider: deepseek-official
-    model: deepseek-v4-flash
-
-    card:
-      name: dsh-harness
-      description: Reads code, runs commands, reports findings.
-      public: true            # discovery expects an anonymous read
-      skills:                 # DECLARED, never projected from ctx.tools
-        - id: general
-          name: general
-          description: General-purpose task execution.
-          tags: [coding, research]
-      provider:               # optional publisher attribution on the card
-        organization: Example Inc.
-        url: https://example.com
-
-    # tokenEnv is a credential REFERENCE name, not a token. Values live in
-    # ~/.dsh/.credentials.yaml or the process environment.
-    peers:
-      alice: { tokenEnv: A2A_PEER_ALICE }
-      bob:   { tokenEnv: A2A_PEER_BOB }
-    trustedPeers: [alice]     # omit to allow every authenticated peer
-    rateLimitPerMinute: 60
-    maxContextTurns: 5
-
-    sendMode: block           # default when the client states no preference
-    blockTimeoutMs: 60000     # after which a blocking request is declined
-    contextIdleTtlMs: 1800000
-    maxResidentContexts: 64
-
-    isolation:
-      workspaceMode: per-peer # per-peer (default) | shared
-      workspaceRoot: /srv/dsh/a2a   # required, no default
-      peerWorkspaces:               # optional per-peer override
-        alice: /srv/project
-
-    push:
-      enabled: false          # reserved; see Known limitations
-```
-
-Every field above is read by the code. Nothing is accepted that is not
-enforced — the deny-list, stream granularity, task-timeout and SSRF knobs from
-the design are absent until their implementations land, so a deployment cannot
-set a security option and believe something honors it.
-
-### Refused at load
-
-- `isolation.workspaceRoot` is required
-- peer names must match `[A-Za-z0-9][A-Za-z0-9_-]*` (they become directory names)
-- `tokenEnv` must be a POSIX identifier, so a pasted token is rejected
-- `trustedPeers` and `peerWorkspaces` may only name declared peers
-- `basePath` must start with `/`
-
-### Credentials
-
-Configuration carries **references**; values live with the credential provider:
-
-```yaml
-# ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
-```
-
-The reference must be a POSIX identifier, so pasting a real token into
-`tokenEnv` fails at load rather than silently becoming a lookup that never
-resolves. Rotation needs no restart: credentials resolve per request.
-
-There is deliberately **no shared bearer token**. Peer isolation is built on
-authenticated identity, so two peers sharing one credential would share one
-identity and could read each other's contexts.
-
-## Isolation
-
-Three layers, the first two structural:
-
-| Layer | Guarantee | Mechanism |
-|---|---|---|
-| Model context | Peer A's conversation cannot enter peer B's model request | Separate `contextId` → separate Session → separate log |
-| Protocol access | Peer B cannot read, continue, or cancel peer A's context or task | Ownership by authenticated identity; a foreign id answers exactly like an absent one |
-| Tooling | Peer A's agent cannot use tools to read peer B's session | `workspaceMode: per-peer` (default) |
-
-`per-peer` gives each identity its own `cwd`. Cross-session tooling authorizes
-by exact `cwd` equality, so distinct workspaces isolate peers through the
-mechanism that already exists — and cut the filesystem side channel too.
-
-`shared` is the collaborative posture (several machines maintaining one
-repository). It must be chosen deliberately: under it, peer A's files are
-readable by peer B.
-
-## Security posture
-
-- **No credential ⇒ no service.** An empty `peers` table answers every request 401.
-- **No TLS.** `ctx.webServer` provides none; put a reverse proxy in front for any
-  non-loopback exposure.
-- **Approvals are deterministically rejected.** Nobody watches an A2A-driven
-  agent, so the policy is pinned to `never` on the agent's own log rather than
-  waiting out a prompt no human will answer.
-- **Injection defanging is noise reduction, not a boundary.** The boundary is the
-  sandbox scope and the rejected approval.
-- **Replies are scrubbed** of credential-shaped strings before leaving.
-- **Tool results never reach a peer** — A2A's opaque-execution principle.
-
-## Blocking is negotiated, not fixed
-
-A2A is async-first: `message/send` may answer with a non-terminal task. Whether
-it waits is settled per request, in this order:
-
-1. `params.configuration.blocking` — the client's stated preference
-2. `sendMode` — the deployment default for a client that states none
-3. `blockTimeoutMs` — after which the server declines to keep waiting
-
-Declining means answering with a **non-terminal task, not a failure**: the task
-is still running and `tasks/get` will have the result. The spec allows exactly
-this — *"The server may reject this if the task is long-running."*
-
-```jsonc
-{ "method": "message/send", "params": {
-    "message": { "kind": "message", "messageId": "m1", "role": "user",
-                 "parts": [{ "kind": "text", "text": "…" }] },
-    "configuration": { "blocking": true } } }
-```
-
-## Task durability
-
-Task state is folded out of the session log by an `a2aTask` projection unit, so
-`tasks/get` keeps answering after a task settles — which is what makes the
-polling path usable at all. `message/stream` and push notifications are optional
-A2A capabilities; `tasks/get` is the baseline every peer can rely on.
-
-The terminal edge carries the agent's committed output, not just the state — the
-projection contract's whole-value rule. Without it a polling peer would receive
-`completed` with an empty artifact list, which reads as "it worked and produced
-nothing" rather than prompting a retry.
-
-The projection registry (`ctx.sessionProjections`) is an optional dependency. A
-composition without it still serves, but logs a warning and cannot answer for a
-task once it settles.
-
-Surviving a process restart additionally needs session persistence composed;
-that path is not wired yet.
-
-## Known limitations
-
-- Push notifications are not implemented; the card advertises them as absent.
-- Only the JSONRPC binding is served (no gRPC, no HTTP+JSON).
-- No extended Agent Card, `stateTransitionHistory`, extensions, or card signatures.
-- A token ceiling settles a task as `completed`, not a distinct state; the real
-  harness turn ending rides in `Task.metadata.dsh.stopReason`.
-- Any config change restarts the plugin and cancels in-flight tasks.
-- `streamGranularity` is not configurable: streaming emits committed assistant
-  messages only. Per-chunk streaming is designed but unbuilt.
-- No orphan-task watchdog: a task wedged non-terminal stays that way.
-- `push.enabled` only selects which error the push methods return; there is no
-  sender, and therefore no SSRF fence to configure.
-- Cross-session tool denial is not implemented. Peer isolation rests on
-  `workspaceMode: per-peer`, which is enforced.
-- Task state survives settlement but not a restart: session persistence is not
-  composed yet, so the projection has no log to cold-fold after a reboot.
-- `workspaceMode: per-peer` is a poor default for collaborating peers — they must
-  set `shared` explicitly or each will see only its own empty directory.
+**Residency is explicit.** HTTP has no connection lifetime, so each `contextId`
+maps to an Activation evicted when idle, leaving the durable Session behind.
 
 ## Development
 
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 129 tests across 9 files: protocol, security, tasks, contexts,
-                   # projection, end-to-end, SSE, polling, blocking
-pnpm serve         # a real server on localhost
+pnpm test       # 129 tests across 9 files
+pnpm serve      # a listening server
+pnpm probe      # 48 checks against a running server
+pnpm build      # emit lib/
 ```
 
-The end-to-end suite boots a real Cordis composition with a real agent loop and
-drives it over real HTTP — the same composition `pnpm serve` runs, so what the
-tests prove is what you run.
+The end-to-end suites boot a real Cordis composition with a real agent loop and
+drive it over HTTP, using a deterministic stub adapter so assertions do not
+depend on model output.
 
-## Compatibility
+## Relationship to the official project
 
-Built against the `0.1.0-rc.6` line of the harness packages. The harness is
-pre-release and explicitly does not promise compatibility across renames or
-repackaging, so peer dependencies are pinned exactly: a breaking upstream change
-should fail at install rather than at runtime.
+Built against [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness).
+
+The official project supplies the agent runtime, the plugin system, and the
+capability seams this plugin consumes. This project supplies:
+
+- The A2A v0.3.0 JSON-RPC binding, served inbound
+- Agent Card construction and dialect normalization
+- Mapping between A2A tasks and harness turns
+- Per-peer authentication, isolation, and workspace policy
+
+The harness is pre-release and does not promise compatibility across renames or
+repackaging, so peer dependencies are pinned exactly to `0.1.0-rc.6`.
 
 ## License
 

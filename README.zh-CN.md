@@ -1,129 +1,269 @@
-# dsh-a2a
+<h1 align="center">dsh-a2a</h1>
 
-[English](README.md) · 简体中文
+<p align="center">
+  <strong>为 DeepSeek Harness 提供入站 A2A 协议服务。</strong><br>
+  发布 Agent Card，接收任何合规 peer 提交的任务。<br>
+  万物皆「插件」，它就是其中之一。
+</p>
 
-面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**入站** [A2A（Agent2Agent）](https://a2a-protocol.org)协议服务端。它在 well-known 路径上发布 Agent Card，并提供 **v0.3.0 JSON-RPC 绑定**——任何知道本部署 URL 的合规 peer 都能发现它，并向 harness agent 提交任务。
+<p align="center"><sub>社区维护的插件，并非 DeepSeek 官方产品。中文 · <a href="README.md">English</a></sub></p>
 
-**只做入站。** 本插件从不主动连接别的 agent：没有 client、没有 peer 目录、没有 A2A subagent provider。它是一个**传输适配层**，不是能力接缝。
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC 绑定">
+  <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
+  <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 项测试">
+</p>
+
+`dsh-a2a` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+上的 agent 可以通过 [A2A（Agent2Agent）](https://a2a-protocol.org)协议被访问。它在
+well-known 路径发布 Agent Card，并实现 **v0.3.0 JSON-RPC 绑定**——任何知道本部署
+URL 的合规 peer 都能发现这个 agent 并向它提交任务。
+
+本插件**只做入站**：从不主动连接其他 agent，没有 client、没有 peer 目录、没有 A2A
+subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力接缝。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add ./path/to/dsh-a2a   # 本地检出
-dsh plugin --profile web add dsh-a2a             # 发布之后
+dsh plugin --profile web add ./path/to/dsh-a2a
 ```
 
-> 尚未发布到 npm，目前请用本地检出那条。`npm pack` 已验证 tarball 里
-> `lib/` 和 `cordis.patch.yml` 都在，只差 `npm publish` 这一步。
+`dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
+`dsh.profile.bundles`——因为包中声明了 `dsh.bundle`。
 
-`dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进 `dsh.profile.bundles`——因为包里声明了 `dsh.bundle`。装完再配置这一层（见[配置](#配置)）。
+| 依赖 | 由谁提供 |
+| --- | --- |
+| `ctx.agents` | `dsh-base` |
+| `ctx.credentials` | `dsh-base` |
+| `ctx.webServer` | **`dsh-web-app`** |
+| `ctx.sessionProjections`（可选） | 组合层；启用后 `tasks/get` 在任务结算后仍可应答 |
 
-### 选一个带 HTTP 载体的 profile
+三个必需服务齐备之前，插件保持 PENDING。`ctx.webServer` 由 `dsh-web-app` 提供而不在
+`dsh-base` 中，因此 `headless` profile 需要先挂载 `@deepseek-ai/dsh-host-webserver`。
+`dsh --profile <name> --dump-config` 可以打印组合出来的配置行。
 
-插件注入 `ctx.agents`、`ctx.webServer`、`ctx.credentials`，三者齐备之前一直停在 PENDING。**`ctx.webServer` 由 `dsh-web-app` 提供，不在 `dsh-base` 里**——所以在 `headless` profile 上，这个 bundle 会加载完就杵在那儿：什么都没服务，也什么都不报错，因为 PENDING 在 Cordis 里是正常状态而不是故障。
+## 快速开始
 
-| Profile | 结果 |
-|---|---|
-| `web` | 正常工作 |
-| `headless` | PENDING —— 需先挂载 `@deepseek-ai/dsh-host-webserver` |
-
-`dsh --profile <name> --dump-config` 会打印组合后的配置行，这是确认载体在不在最快的办法。
-
-## 本地试跑
-
-demo **一定会跑真实模型**——`deepseek-official/deepseek-v4-flash`，或者 `DEEPSEEK_MODEL` 指定的那个。缺凭据是错误，而不是悄悄退回到一个答不出任何有用内容的 stub。
-
-凭据经 `ctx.credentials` 解析，所以它可以放在进程环境变量、`$DSH_HOME/.credentials.yaml`、或任一 `.env` 层里——harness 装机时本来用哪种，这里原样可用。测试套件反过来强制用 stub：真实模型会让"断言回复原文"这件事失去意义，而且每跑一次都烧 token。
-
-`A2A_SEND_MODE=immediate` 是用来走**轮询路径**的：peer 会拿到一个非终态 task，必须再用 `tasks/get` 回来取结果。
-
-### bash / zsh
+仓库自带的示例组合会运行真实模型并启动一个监听服务。
 
 ```sh
 pnpm install
-A2A_PEER_ALICE=demo123 A2A_PORT=9922 A2A_SEND_MODE=immediate pnpm serve
+A2A_PEER_ALICE=demo123 A2A_PORT=9922 pnpm serve
 ```
+
+```powershell
+$env:A2A_PEER_ALICE = "demo123"
+$env:A2A_PORT = "9922"
+pnpm serve
+```
+
+模型凭据经 `ctx.credentials` 解析，因此 harness home、任一 `.env` 层或进程环境中已有的
+`DEEPSEEK_API_KEY` 都会被直接采用。缺少凭据时启动失败。
+
+获取 Card 并提交任务：
 
 ```sh
 curl -s http://127.0.0.1:9922/.well-known/agent-card.json
 
-curl -s http://127.0.0.1:9922/a2a   -H "authorization: Bearer demo123"   -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
+curl -s http://127.0.0.1:9922/a2a \
+  -H "authorization: Bearer demo123" \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
         "message":{"kind":"message","messageId":"m1","role":"user",
                    "parts":[{"kind":"text","text":"hello"}]}}}'
 ```
 
-### PowerShell
+| 变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `A2A_PEER_ALICE` | — | 示例 peer 的 bearer token，必填 |
+| `A2A_PORT` | `9900` | 监听端口 |
+| `A2A_SEND_MODE` | `block` | `block` 或 `immediate` |
+| `A2A_WORKSPACE_ROOT` | 临时目录 | per-peer 工作目录的父目录 |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 向适配器请求的模型 id |
 
-PowerShell 没有 `VAR=value cmd` 这种前缀写法，得先设变量。另外 `curl` 是 `Invoke-WebRequest` 的别名，所以要显式调 `curl.exe`，或者改用 `Invoke-RestMethod`。
-
-```powershell
-pnpm install
-$env:A2A_PEER_ALICE = "demo123"
-$env:A2A_PORT = "9922"
-$env:A2A_SEND_MODE = "immediate"
-pnpm serve
-```
-
-另开一个终端：
-
-```powershell
-curl.exe -s http://127.0.0.1:9922/.well-known/agent-card.json
-
-$h = @{ authorization = "Bearer demo123" }
-$body = '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","messageId":"m1","role":"user","parts":[{"kind":"text","text":"hello"}]}}}'
-$sent = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' -Body $body
-$sent.result | ConvertTo-Json -Depth 5
-
-# 此刻 task 已经结算、槽位已经释放；下面这个答案来自
-# 在 session log 上折叠出来的 projection。
-$taskId = $sent.result.id
-$poll = Invoke-RestMethod -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' `
-  -Body "{`"jsonrpc`":`"2.0`",`"id`":2,`"method`":`"tasks/get`",`"params`":{`"taskId`":`"$taskId`"}}"
-$poll.result | ConvertTo-Json -Depth 5
-```
-
-> **中文回复显示成乱码?** 那是 Windows PowerShell 5.1 的解码问题,不是服务端的问题。`Invoke-RestMethod` 只在响应头明确带 `charset` 时才按它解码,否则对 `application/json` 回退到 ISO-8859-1,于是 UTF-8 的中文就变成 `ä½ å¥½` 这样。改用 `Invoke-WebRequest` 自己解:
->
-> ```powershell
-> $resp = Invoke-WebRequest -Uri http://127.0.0.1:9922/a2a -Method Post -Headers $h -ContentType 'application/json' -Body $body
-> $json = [Text.Encoding]::UTF8.GetString($resp.RawContentStream.ToArray()) | ConvertFrom-Json
-> ```
->
-> 或者直接用 `curl.exe`（必要时先 `chcp 65001`）。
-
-### 一次性探针
-
-服务起着的时候，把所有已文档化的行为扫一遍，输出一张通过/失败清单。用纯 Node 写的，所以 JSON 载荷能绕开两种 shell 的引号规则：
+一次性探针会对运行中的服务执行 48 项检查，任何一项不符即以非零码退出：
 
 ```sh
 pnpm probe                                        # 默认 :9922 / demo123
 node example/probe.mjs http://127.0.0.1:9922 demo123
 ```
 
-任何一项对不上就以非零码退出，所以它也能当作打到真实部署上的冒烟检查。
+## 对外接口
 
-## 它对外提供什么
+| 路由 | 方法 | 认证 |
+| --- | --- | --- |
+| `/.well-known/agent-card.json` | GET | 默认公开 |
+| `/.well-known/agent.json` | GET | 默认公开 |
+| `{basePath}`（默认 `/a2a`） | POST | 必须携带 Bearer |
 
-| 路由 | 用途 |
-|---|---|
-| `GET /.well-known/agent-card.json` | Agent Card（v0.3 规范路径） |
-| `GET /.well-known/agent.json` | 同一张卡，兼容 0.3 之前的客户端 |
-| `POST /a2a` | JSON-RPC 端点；SSE 方法也在这条路由上应答 |
+| JSON-RPC 方法 | v1.0 别名 | 状态 |
+| --- | --- | --- |
+| `message/send` | `SendMessage` | 是否阻塞逐请求协商 |
+| `message/stream` | `SendStreamingMessage` | SSE |
+| `tasks/get` | `GetTask` | 幂等；结算后仍可应答 |
+| `tasks/cancel` | `CancelTask` | 取消正在执行的 turn |
+| `tasks/resubscribe` | `SubscribeToTask` | 续订活任务，或给一帧终态 |
+| `tasks/pushNotificationConfig/*` | `*TaskPushNotificationConfig` | `-32003` |
+| `tasks/list` | `ListTasks` | `-32601` |
+| `agent/getAuthenticatedExtendedCard` | `GetExtendedAgentCard` | `-32601` |
 
-| 方法 | 状态 |
-|---|---|
-| `message/send` | ✅ 是否阻塞逐请求协商 |
-| `message/stream` | ✅ SSE，两种方言都支持 |
-| `tasks/get` | ✅ 幂等，结算之后仍可应答 |
-| `tasks/cancel` | ✅ 真正取消，不是丢掉回复了事 |
-| `tasks/resubscribe` | ✅ 活任务续订；已结算的给一帧终态 |
-| `tasks/pushNotificationConfig/*` | ⛔ 返回 `-32003`；卡上如实声明 `pushNotifications: false` |
-| `tasks/list` · `ListTasks` | ⛔ 返回 `-32601`；v1.0 才有的方法，未实现 |
-| `agent/getAuthenticatedExtendedCard` | ⛔ 返回 `-32601`；无扩展卡 |
+两种方言都接受。v0.3（`message/send`、`"working"`、带 `kind` 的 part）是主线；v1.0
+拼写（`SendMessage`、`TASK_STATE_WORKING`、成员存在式 part）在入站时被归一化，并按请求
+所用的方言渲染回去。
 
-两种方言都接受：v0.3（`message/send`、`"working"`、`kind` 标记的 part）是主线，v1.0 的写法（`SendMessage`、`TASK_STATE_WORKING`、按成员存在判断的 part）在入口处归一化，出口再按请求本身用的方言渲染回去。
+入站消息可携带 text、file、data 三类 part。file 与 data 会以方括号引用的形式进入模型
+上下文。回复为纯文本。
 
-## 它是怎么工作的
+认证、限流与信任门分别以 HTTP `401`、`429`、`403` 应答，响应体仍是合法的 JSON-RPC 错误
+信封。属于其他 peer 的任务，应答方式与不存在的任务完全一致。
+
+## 主要功能
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>可发现</h3>
+      <p>在 v0.3 的 well-known 路径提供动态 Agent Card，并同时保留 pre-0.3 路径供旧客户端使用。skills 由配置声明，而不是从运行时工具注册表投影，因此公开的 Card 不会带出已安装工具的清单。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>阻塞可协商</h3>
+      <p>A2A 是 async-first 的。<code>message/send</code> 是否等待逐请求决定：客户端的 <code>configuration.blocking</code> 优先，<code>sendMode</code> 是默认值，<code>blockTimeoutMs</code> 到时则以「返回非终态任务、任务继续执行」的方式拒绝继续等待。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>任务状态持久</h3>
+      <p>每一次生命周期迁移都是一条 <code>a2a/task</code> session 事件，由 projection unit 折叠成 <code>tasks/get</code> 对外提供的读模型。终态那条边同时携带 agent 已提交的输出，因此轮询的 peer 拿到的是结果本身，而不只是状态。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Peer 隔离</h3>
+      <p>每个认证身份拥有独立的 context、独立的任务，默认还拥有独立的工作目录。跨会话工具按 <code>cwd</code> 精确相等授权，因此不同的工作目录借助 harness 中已有的机制天然隔离各个 peer。</p>
+    </td>
+  </tr>
+</table>
+
+## 配置
+
+```yaml
+- id: a2a-server
+  name: dsh-a2a
+  config:
+    basePath: /a2a
+    publicUrl: https://agents.example.com/a2a   # 写入 Card 的对外地址
+    protocolVersion: 0.3.0
+    provider: deepseek-official
+    model: deepseek-v4-flash
+
+    card:
+      name: dsh-harness
+      description: 读代码、执行命令、给出结论。
+      public: true
+      skills:
+        - id: general
+          name: general
+          description: 通用任务执行。
+          tags: [coding, research]
+      provider:
+        organization: Example Inc.
+        url: https://example.com
+
+    peers:
+      alice: { tokenEnv: A2A_PEER_ALICE }
+      bob:   { tokenEnv: A2A_PEER_BOB }
+    trustedPeers: [alice]
+    rateLimitPerMinute: 60
+    maxContextTurns: 5
+
+    sendMode: block
+    blockTimeoutMs: 60000
+    contextIdleTtlMs: 1800000
+    maxResidentContexts: 64
+
+    isolation:
+      workspaceMode: per-peer
+      workspaceRoot: /srv/dsh/a2a
+      peerWorkspaces:
+        alice: /srv/project
+
+    push:
+      enabled: false
+```
+
+| 配置项 | 默认值 | 含义 |
+| --- | --- | --- |
+| `basePath` | `/a2a` | JSON-RPC 路由 |
+| `publicUrl` | 由 `Host` 推导 | 写入 Card 的可路由地址 |
+| `protocolVersion` | `0.3.0` | Card 上声明的协议版本 |
+| `provider` · `model` | — | 本服务创建的每个 agent 使用的模型路由 |
+| `card.public` | `true` | 无需凭据即可获取 Card |
+| `card.skills` | `[]` | 声明的 skills；为空时回退到一条 `general` |
+| `peers` | `{}` | 身份 → 凭据**引用名** |
+| `trustedPeers` | 全部已认证身份 | 允许执行任务的身份白名单 |
+| `rateLimitPerMinute` | `60` | 按身份的滑动窗口 |
+| `maxContextTurns` | `5` | 单个 context 接受的消息数上限，超出后 `rejected` |
+| `sendMode` | `block` | 客户端未表态时的默认行为 |
+| `blockTimeoutMs` | `60000` | 超过后拒绝继续阻塞 |
+| `contextIdleTtlMs` | `1800000` | context 的 agent 被释放前的空闲时长 |
+| `maxResidentContexts` | `64` | 常驻 context 数量上限 |
+| `isolation.workspaceMode` | `per-peer` | `per-peer` 或 `shared` |
+| `isolation.workspaceRoot` | — | 必填；父目录或共享 cwd |
+| `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录 |
+| `push.enabled` | `false` | 保留字段，见[边界](#边界) |
+
+以下情况在加载期即被拒绝：缺少 `isolation.workspaceRoot`；peer 名不匹配
+`[A-Za-z0-9][A-Za-z0-9_-]*`；`tokenEnv` 不是 POSIX 标识符；`trustedPeers` 或
+`peerWorkspaces` 引用了未声明的 peer；`basePath` 不以 `/` 开头。
+
+### 凭据
+
+配置中携带的是凭据**引用名**，而非凭据值：
+
+```yaml
+peers:
+  alice: { tokenEnv: A2A_PEER_ALICE }
+```
+
+```yaml
+# ~/.dsh/.credentials.yaml
+A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
+```
+
+`ctx.credentials` 在每次请求时跨四层解析该引用——进程环境、托管文档、`<cwd>/.env`、
+`$DSH_HOME/.env`——因此轮换 token 在下一次请求即生效，无需重启。peer 身份只来自所出示
+的凭据，请求体中的任何内容都无法声明身份。本插件不提供共享 bearer token：隔离建立在
+互不相同的身份之上。
+
+## 隔离
+
+| 层 | 保证 | 机制 |
+| --- | --- | --- |
+| 模型上下文 | 一个 peer 的对话不会进入另一个 peer 的模型请求 | 不同 `contextId` → 不同 Session → 不同 log |
+| 协议访问 | peer 无法读取、续接或取消他人的 context 与任务 | 按认证身份判定归属 |
+| 工具层 | peer 的 agent 无法借工具读取他人的 session | `workspaceMode: per-peer` |
+
+`per-peer`（默认）依据 `workspaceRoot` 为每个身份派生独立 `cwd`。`shared` 则把所有 peer
+放进同一个目录，适用于协作维护同一个仓库的场景；此模式下一个 peer 写入的文件对其他 peer
+可读。
+
+## 边界
+
+- 只做入站。没有出站 client、peer 目录或 A2A subagent provider。
+- 只提供 JSONRPC 绑定。不提供 gRPC 与 HTTP+JSON，Card 上如实声明。
+- 未实现推送通知。`push.enabled` 仅决定推送方法返回哪个错误码，Card 上声明
+  `pushNotifications: false`。
+- 不支持扩展 Agent Card、`stateTransitionHistory`、协议扩展与 Card 签名。
+- 流式只推送已提交的 assistant 消息，未实现逐 chunk 推送。
+- 无孤儿任务看门狗：卡在非终态的任务会一直保持该状态。
+- 未实现跨会话工具拒绝；隔离依赖 `workspaceMode`。
+- 触及 token 上限的任务结算为 `completed`，真实的 turn 结束原因放在
+  `Task.metadata.dsh.stopReason`——A2A 的状态枚举无法表达它。
+- 任务状态可以跨结算存活，但无法跨进程重启：未组合 session 持久化，重启后 projection
+  没有日志可供冷折叠。
+- `ctx.webServer` 不提供 TLS。任何非回环地址的暴露都应置于反向代理之后。
+- 修改配置会重启插件并取消进行中的任务。
+
+## 架构
 
 ```
 src/
@@ -143,165 +283,44 @@ src/
 └── types.ts           向 SessionEventMap / MessageSourceMap 的声明合并
 ```
 
-三个决定塑造了其余一切：
+**task 是一个区间，不是一个 turn。** 一条提交进来的消息，如果工具排出了更多工作，可能
+横跨好几个 turn，因此结算使用三个钩子：`agent/inbox/claimed` 把消息绑到某个 turn，
+`turn/end` 记录该 turn 的结束原因，`agent.whenIdle()` 在整个 agent 安静后才结算。
 
-**task 是一个区间，不是一个 turn。** 一条提交进来的消息，如果工具排出了更多工作，可能横跨好几个 turn。所以结算用三个钩子而不是一个：`agent/inbox/claimed` 把消息绑到某个 turn，`turn/end` 记录那个 turn 的结束原因，`agent.whenIdle()` 在整个 agent 安静下来后才结算。模型错误立刻判失败；token 上限则结算为 `completed`，真实结束原因放进 `Task.metadata.dsh.stopReason`——因为 A2A 的状态枚举表达不了它。
+**任务状态活在 session log 里。** 生命周期迁移是 `a2a/task` 事件，由 projection unit
+折叠成读模型。终态那条边携带已提交的输出，因此折叠结果可以直接给出答案，无需回头翻消息
+历史。
 
-**任务状态活在 session log 里。** 每一次生命周期迁移都是一条 `a2a/task` 事件，由 projection unit 折叠成 `tasks/get` 对外提供的读模型。终态那条边同时携带 agent 已提交的输出——这是 projection 契约的「整值规则」——所以轮询的 peer 拿到的是答案本身，而不只是「活干完了」这个事实。
-
-**HTTP 没有连接生命周期，所以驻留必须显式管理。** 每个 `contextId` 对应一个 Activation，空闲后被驱逐，持久化的 Session 留在原地。这是本设计唯一偏离 `dsh-acp` 的地方——后者的 stdio 连接天然拥有自己的 session。
-
-## 配置
-
-```yaml
-- id: a2a-server
-  name: dsh-a2a
-  config:
-    basePath: /a2a
-    publicUrl: https://agents.example.com/a2a   # 挂在反向代理后面时填
-    protocolVersion: 0.3.0    # 卡上声明的协议版本
-    provider: deepseek-official
-    model: deepseek-v4-flash
-
-    card:
-      name: dsh-harness
-      description: 读代码、跑命令、汇报结论。
-      public: true            # 发现流程预期这是匿名可读的
-      skills:                 # 显式声明，绝不从 ctx.tools 投影出来
-        - id: general
-          name: general
-          description: 通用任务执行。
-          tags: [coding, research]
-      provider:               # 可选，卡上的发布方署名
-        organization: Example Inc.
-        url: https://example.com
-
-    # tokenEnv 是凭据的【引用名】，不是 token 本身。
-    # 值放在 ~/.dsh/.credentials.yaml 或进程环境变量里。
-    peers:
-      alice: { tokenEnv: A2A_PEER_ALICE }
-      bob:   { tokenEnv: A2A_PEER_BOB }
-    trustedPeers: [alice]     # 不填 = 放行所有通过鉴权的 peer
-    rateLimitPerMinute: 60
-    maxContextTurns: 5
-
-    sendMode: block           # 客户端没表态时的部署默认值
-    blockTimeoutMs: 60000     # 超过这个时间就拒绝继续阻塞
-    contextIdleTtlMs: 1800000
-    maxResidentContexts: 64
-
-    isolation:
-      workspaceMode: per-peer # per-peer（默认）| shared
-      workspaceRoot: /srv/dsh/a2a   # 必填，无默认值
-      peerWorkspaces:               # 可选，按 peer 覆盖
-        alice: /srv/project
-
-    push:
-      enabled: false          # 预留；见"已知限制"
-```
-
-上面每一个字段都被代码真正读取。**没有任何"接受了但不生效"的配置**——设计里的 deny-list、流式粒度、任务超时、SSRF 开关，在它们的实现落地之前一律不出现在 schema 里，免得部署方设了一个安全选项、还以为有东西在执行它。
-
-### 加载即拒绝的情况
-
-- `isolation.workspaceRoot` 必填
-- peer 名字必须匹配 `[A-Za-z0-9][A-Za-z0-9_-]*`（它会变成目录名）
-- `tokenEnv` 必须是 POSIX 标识符，所以粘贴进来的真 token 会被拒
-- `trustedPeers` 和 `peerWorkspaces` 只能引用已声明的 peer
-- `basePath` 必须以 `/` 开头
-
-### 凭据
-
-配置里携带的是**引用**，值放在凭据提供方那里：
-
-```yaml
-# ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
-```
-
-引用名必须是 POSIX 标识符——所以把真 token 粘进 `tokenEnv` 会在加载期直接失败，而不是悄悄变成一个永远解析不出来的查找键。轮换不需要重启：凭据是每请求解析的。
-
-这里**刻意没有共享 bearer token**。peer 隔离建立在"已鉴权的身份"之上，两个 peer 共用一份凭据就等于共用一个身份，彼此的 context 就能互相读到。
-
-## 隔离
-
-三层，前两层是结构性的：
-
-| 层 | 保证 | 机制 |
-|---|---|---|
-| 模型上下文 | peer A 的对话进不了 peer B 的模型请求 | 不同 `contextId` → 不同 Session → 不同 log |
-| 协议访问 | peer B 读不到、续不了、也取消不了 peer A 的 context 或 task | 按已鉴权身份判归属；别人的 id 与不存在的 id 应答完全一致 |
-| 工具 | peer A 的 agent 无法用工具读到 peer B 的 session | `workspaceMode: per-peer`（默认） |
-
-`per-peer` 给每个身份独立的 `cwd`。跨 session 的工具按 `cwd` 严格相等来授权，所以不同工作目录**用现成的机制**就把 peer 隔开了——顺带也切断了文件系统这条侧信道。
-
-`shared` 是协作姿态（多台机器维护同一个仓库），必须显式选择：在它之下，peer A 的文件对 peer B 可读。
-
-## 安全姿态
-
-- **没有凭据就没有服务。** `peers` 表为空时，所有请求一律 401。
-- **不提供 TLS。** `ctx.webServer` 不带 TLS；任何非 loopback 的暴露都请在前面放反向代理。
-- **审批一律确定性拒绝。** 没人在旁边盯着一个由 A2A 驱动的 agent，所以策略在该 agent 自己的 log 上被钉死为 `never`，而不是干等一个不会有人回答的提示。
-- **注入去势是降噪，不是边界。** 边界是沙箱范围和那个被拒绝的审批。
-- **回复在出站前被洗过**，形似凭据的字符串会被清掉。
-- **工具结果永不外传给 peer** —— A2A 的"执行不透明"原则。
-
-## 阻塞是协商出来的，不是写死的
-
-A2A 是 async-first 的：`message/send` 可以用一个非终态 task 来应答。这一轮到底等不等，按下面的顺序逐请求决定：
-
-1. `params.configuration.blocking` —— 客户端明示的偏好
-2. `sendMode` —— 客户端没表态时的部署默认值
-3. `blockTimeoutMs` —— 超过它服务端就拒绝继续等
-
-**拒绝继续等 ≠ 失败**：应答的是一个非终态 task，任务仍在跑，`tasks/get` 能拿到结果。规范明确允许这么做——*"若任务长时间运行，服务端可以拒绝阻塞。"*
-
-```jsonc
-{ "method": "message/send", "params": {
-    "message": { "kind": "message", "messageId": "m1", "role": "user",
-                 "parts": [{ "kind": "text", "text": "…" }] },
-    "configuration": { "blocking": true } } }
-```
-
-## 任务持久性
-
-任务状态由一个 `a2aTask` projection 单元从 session log 里折叠出来，所以 task 结算之后 `tasks/get` 仍然答得出来——**这正是轮询路径能用的前提**。`message/stream` 和推送通知都是 A2A 的可选能力，`tasks/get` 才是每个 peer 都能依赖的底线。
-
-终态那条边携带的是 agent **已提交的输出**，而不只是一个状态——这是 projection 契约的"整值"规则。少了它，轮询的 peer 会收到一个 `completed` 配一个空 artifact 列表，读起来像"跑成功了但什么都没产出"，而不是提示它该重试。
-
-projection 注册表（`ctx.sessionProjections`）是可选依赖。没有它的组合照样能服务，但会打一条警告，并且在 task 结算之后就答不出来了。
-
-**扛住进程重启**还需要额外组合 session 持久化，那条路径尚未接通。
-
-## 已知限制
-
-- 推送通知未实现；卡上如实声明为不支持。
-- 只提供 JSONRPC 绑定（没有 gRPC，没有 HTTP+JSON）。
-- 没有扩展版 Agent Card，没有 `stateTransitionHistory`、extensions、卡签名。
-- 触到 token 上限会把 task 结算为 `completed`，而不是一个单独的状态；真实的 harness 轮次结束原因放在 `Task.metadata.dsh.stopReason` 里。
-- 任何配置变更都会重启插件，并取消进行中的 task。
-- `streamGranularity` 不可配置：流式只发出已提交的 assistant 消息。逐块流式设计过，但没实现。
-- 没有孤儿任务看门狗：卡在非终态的 task 就一直卡着。
-- `push.enabled` 只决定推送方法返回哪种错误；没有发送器，因此也没有 SSRF 围栏可配。
-- 跨 session 的工具拒绝未实现。peer 隔离靠的是 `workspaceMode: per-peer`，那个是真正执行的。
-- 任务状态能扛过结算，但扛不过重启：session 持久化尚未组合，重启后 projection 没有 log 可以冷折叠。
-- 对需要协作的 peer 来说，`workspaceMode: per-peer` 是个糟糕的默认值——它们必须显式设 `shared`，否则各自只会看到一个空目录。
+**驻留是显式管理的。** HTTP 没有连接生命周期，因此每个 `contextId` 对应一个 Activation，
+空闲后被驱逐，持久化的 Session 留在原地。
 
 ## 开发
 
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test          # 129 个测试，9 个文件：协议、安全、任务、上下文、
-                   # projection、端到端、SSE、轮询、阻塞
-pnpm serve         # 在 localhost 上起一个真实服务
+pnpm test       # 9 个文件共 129 项测试
+pnpm serve      # 启动监听服务
+pnpm probe      # 对运行中的服务执行 48 项检查
+pnpm build      # 产出 lib/
 ```
 
-端到端套件会启动一个真实的 Cordis 组合、跑真实的 agent loop、并通过真实 HTTP 驱动它——和 `pnpm serve` 跑的是同一个组合，所以**测试证明的就是你实际运行的东西**。
+端到端测试会启动真实的 Cordis 组合与真实的 agent loop，并通过 HTTP 驱动它；模型使用
+确定性的 stub 适配器，使断言不依赖模型输出。
 
-## 兼容性
+## 与官方项目的关系
 
-针对 harness 包的 `0.1.0-rc.6` 线构建。harness 尚处预发布阶段，且明确不承诺跨重命名或重新打包的兼容性，因此 peer dependencies 全部精确锁版本：上游的破坏性变更应该在安装时就失败，而不是等到运行时。
+本项目基于 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 构建。
+
+官方项目提供 agent 运行时、插件系统，以及本插件所消费的各个能力接缝。本项目提供：
+
+- 入站的 A2A v0.3.0 JSON-RPC 绑定
+- Agent Card 构造与方言归一化
+- A2A task 与 harness turn 之间的映射
+- 按 peer 的认证、隔离与工作目录策略
+
+harness 处于 pre-release 阶段，不承诺跨重命名或重新打包的兼容性，因此 peer 依赖精确锁定
+在 `0.1.0-rc.6`。
 
 ## 许可
 
