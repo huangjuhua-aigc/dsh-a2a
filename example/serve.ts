@@ -29,10 +29,15 @@ if (token === undefined || token.length === 0) {
 const workspaceRoot = process.env['A2A_WORKSPACE_ROOT']
   ?? await mkdtemp(join(tmpdir(), 'dsh-a2a-serve-'))
 
+// `immediate` is what exercises the polling path: the peer gets a non-terminal
+// task and must come back with tasks/get for the result.
+const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'block'
+
 const app = await compose({
   port: PORT,
   workspaceRoot,
   peers: { alice: 'A2A_PEER_ALICE' },
+  sendMode,
 })
 
 const origin = `http://127.0.0.1:${app.port}`
@@ -42,17 +47,18 @@ dsh-a2a listening on ${origin}
   Agent Card   ${origin}/.well-known/agent-card.json
   JSON-RPC     ${origin}/a2a
   Workspaces   ${workspaceRoot}/<peer>
+  sendMode     ${sendMode}
 
 Try it:
 
-  curl -s ${origin}/.well-known/agent-card.json | jq
+  curl -s ${origin}/.well-known/agent-card.json
 
   curl -s ${origin}/a2a \\
     -H "authorization: Bearer $A2A_PEER_ALICE" \\
     -H 'content-type: application/json' \\
     -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
           "message":{"kind":"message","messageId":"m1","role":"user",
-                     "parts":[{"kind":"text","text":"hello"}]}}}' | jq
+                     "parts":[{"kind":"text","text":"hello"}]}}}'
 
 Ctrl-C to stop.
 `)

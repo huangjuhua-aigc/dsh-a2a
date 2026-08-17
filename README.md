@@ -30,14 +30,14 @@ A2A_PEER_ALICE=$(openssl rand -hex 16) pnpm serve
 ```
 
 ```sh
-curl -s http://127.0.0.1:9900/.well-known/agent-card.json | jq
+curl -s http://127.0.0.1:9900/.well-known/agent-card.json
 
 curl -s http://127.0.0.1:9900/a2a \
   -H "authorization: Bearer $A2A_PEER_ALICE" \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
         "message":{"kind":"message","messageId":"m1","role":"user",
-                   "parts":[{"kind":"text","text":"hello"}]}}}' | jq
+                   "parts":[{"kind":"text","text":"hello"}]}}}'
 ```
 
 ## What it serves
