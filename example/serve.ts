@@ -78,7 +78,7 @@ const workspaceRoot = process.env['A2A_WORKSPACE_ROOT']
   ?? await mkdtemp(join(tmpdir(), 'dsh-a2a-serve-'))
 
 // `immediate` is what exercises the polling path: the peer gets a non-terminal
-// task and must come back with tasks/get for the result.
+// task and must come back with GetTask for the result.
 const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'block'
 
 // Two failures are common enough to be worth explaining rather than dumping:
@@ -122,7 +122,7 @@ console.log(`
 dsh-a2a listening on ${origin}
 
   Agent Card   ${origin}/.well-known/agent-card.json
-  JSON-RPC     ${origin}/a2a
+  JSON-RPC     ${origin}/a2a   (A2A v1.0)
   Workspaces   ${workspaceRoot}/<peer>
   Peers        ${Object.keys(peers).join(', ')}
   sendMode     ${sendMode}
@@ -135,9 +135,10 @@ Try it:
   curl -s ${origin}/a2a \\
     -H "authorization: Bearer <token>" \\
     -H 'content-type: application/json' \\
-    -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
-          "message":{"kind":"message","messageId":"m1","role":"user",
-                     "parts":[{"kind":"text","text":"hello"}]}}}'
+    -H 'a2a-version: 1.0' \\
+    -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+          "message":{"messageId":"m1","role":"ROLE_USER",
+                     "parts":[{"text":"hello"}]}}}'
 
 Ctrl-C to stop.
 `)

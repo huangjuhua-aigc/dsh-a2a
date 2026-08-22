@@ -4,6 +4,9 @@
  * These tests exercise the path a peer actually takes — card discovery,
  * bearer authentication, context materialization, turn correlation, settlement,
  * artifact rendering — with a stub model adapter so no API key is involved.
+ *
+ * Every request is A2A v1.0. The v0.3 spellings appear only where a test proves
+ * they are refused.
  */
 
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -38,22 +41,26 @@ async function rpc(
   return { status: response.status, body: text.length > 0 ? JSON.parse(text) : {} }
 }
 
-/** Build a `message/send` request. */
+/** Build a `SendMessage` request. */
 function sendRequest(id: number, text: string, contextId?: string): unknown {
   return {
     jsonrpc: '2.0',
     id,
-    method: 'message/send',
+    method: 'SendMessage',
     params: {
       message: {
-        kind: 'message',
         messageId: `m-${id}`,
-        role: 'user',
-        parts: [{ kind: 'text', text }],
+        role: 'ROLE_USER',
+        parts: [{ text, mediaType: 'text/plain' }],
         ...contextId === undefined ? {} : { contextId },
       },
     },
   }
+}
+
+/** The task carried in a `SendMessage` result, which v1.0 wraps in a member. */
+function sentTask(body: Record<string, unknown>): Record<string, any> {
+  return (body['result'] as Record<string, any>)?.task as Record<string, any>
 }
 
 beforeEach(async () => {
@@ -82,21 +89,29 @@ describe('agent card discovery', () => {
     const response = await fetch(app!.cardUrl)
     expect(response.status).toBe(200)
     const card = await response.json() as Record<string, any>
-    expect(card.protocolVersion).toBe('0.3.0')
-    expect(card.preferredTransport).toBe('JSONRPC')
-    expect(card.url).toContain('/a2a')
     expect(card.skills[0].id).toBe('general')
   })
 
-  it('advertises both interface spellings so either dialect finds the endpoint', async () => {
+  it('declares its endpoint and version through supportedInterfaces', async () => {
     const card = await (await fetch(app!.cardUrl)).json() as Record<string, any>
     expect(card.supportedInterfaces).toHaveLength(1)
     expect(card.supportedInterfaces[0].protocolBinding).toBe('JSONRPC')
+    expect(card.supportedInterfaces[0].protocolVersion).toBe('1.0')
+    expect(card.supportedInterfaces[0].url).toContain('/a2a')
+  })
+
+  it('carries none of the card members v1.0 removed', async () => {
+    const card = await (await fetch(app!.cardUrl)).json() as Record<string, any>
+    expect(card.protocolVersion).toBeUndefined()
+    expect(card.url).toBeUndefined()
+    expect(card.preferredTransport).toBeUndefined()
+    expect(card.supportsAuthenticatedExtendedCard).toBeUndefined()
   })
 
   it('declares the bearer scheme it actually enforces', async () => {
     const card = await (await fetch(app!.cardUrl)).json() as Record<string, any>
-    expect(card.securitySchemes.bearer).toEqual({ type: 'http', scheme: 'bearer' })
+    expect(card.securitySchemes.bearer).toEqual({ httpAuthSecurityScheme: { scheme: 'Bearer' } })
+    expect(card.securityRequirements).toEqual([{ schemes: { bearer: { list: [] } } }])
   })
 
   it('also answers the legacy well-known path', async () => {
@@ -129,19 +144,29 @@ describe('authentication', () => {
   })
 })
 
-describe('message/send round trip', () => {
+describe('SendMessage round trip', () => {
   it('runs a real agent turn and returns a completed task', async () => {
     const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'ping'))
-    const task = body['result'] as Record<string, any>
-    expect(task.kind).toBe('task')
-    expect(task.status.state).toBe('completed')
+    const task = sentTask(body)
+    expect(task.status.state).toBe('TASK_STATE_COMPLETED')
     expect(task.id).toBeTruthy()
     expect(task.contextId).toBeTruthy()
   })
 
+  it('wraps the result in a task member rather than returning it bare', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'ping'))
+    const result = body['result'] as Record<string, any>
+    expect(Object.keys(result)).toEqual(['task'])
+  })
+
+  it('carries no kind discriminator, which v1.0 removed', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'ping'))
+    expect(sentTask(body).kind).toBeUndefined()
+  })
+
   it('returns the agent output as an artifact', async () => {
     const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'ping'))
-    const task = body['result'] as Record<string, any>
+    const task = sentTask(body)
     // The stub adapter echoes the user text back, so a round trip through the
     // whole path is visible in the artifact.
     expect(task.artifacts[0].parts[0].text).toContain('echo:')
@@ -150,12 +175,32 @@ describe('message/send round trip', () => {
 
   it('mints a contextId the peer can continue', async () => {
     const first = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'first'))
-    const contextId = (first.body['result'] as Record<string, any>).contextId as string
+    const contextId = sentTask(first.body).contextId as string
 
     const second = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(2, 'second', contextId))
-    const task = second.body['result'] as Record<string, any>
-    expect(task.status.state).toBe('completed')
+    const task = sentTask(second.body)
+    expect(task.status.state).toBe('TASK_STATE_COMPLETED')
     expect(task.contextId).toBe(contextId)
+  })
+
+  it('refuses a message addressed to a task that already settled', async () => {
+    const first = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'first'))
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'SendMessage',
+      params: {
+        message: {
+          messageId: 'm-2',
+          role: 'ROLE_USER',
+          parts: [{ text: 'more' }],
+          taskId: sentTask(first.body).id,
+        },
+      },
+    })
+    const error = body['error'] as Record<string, any>
+    expect(error.code).toBe(-32004)
+    expect(error.data[0].reason).toBe('UNSUPPORTED_OPERATION')
   })
 
   it('rejects an empty message', async () => {
@@ -165,38 +210,113 @@ describe('message/send round trip', () => {
 
   it('rejects an unknown method with the standard code', async () => {
     const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
-      jsonrpc: '2.0', id: 1, method: 'tasks/teleport', params: {},
+      jsonrpc: '2.0', id: 1, method: 'Teleport', params: {},
     })
     expect((body['error'] as Record<string, unknown>)['code']).toBe(-32601)
   })
+})
 
-  it('rejects an unsupported A2A-Version header', async () => {
-    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'), {
-      'a2a-version': '9.9',
+describe('the retired v0.3 surface', () => {
+  it('refuses a v0.3 method and names its v1.0 replacement', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'message/send',
+      params: {
+        message: {
+          kind: 'message',
+          messageId: 'm1',
+          role: 'user',
+          parts: [{ kind: 'text', text: 'hi' }],
+        },
+      },
+    })
+    const error = body['error'] as Record<string, any>
+    expect(error.code).toBe(-32601)
+    expect(error.message).toContain('SendMessage')
+  })
+
+  it('refuses the v0.3 taskId parameter, which v1.0 spells id', async () => {
+    const first = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'))
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
+      jsonrpc: '2.0', id: 2, method: 'GetTask', params: { taskId: sentTask(first.body).id },
     })
     expect((body['error'] as Record<string, unknown>)['code']).toBe(-32602)
   })
 })
 
-describe('v1.0 dialect', () => {
-  it('accepts the v1.0 method name and renders the v1.0 state spelling', async () => {
+describe('version negotiation', () => {
+  it('serves a request that names this interface version', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'), {
+      'a2a-version': '1.0',
+    })
+    expect(body['error']).toBeUndefined()
+  })
+
+  it('serves a request with no version header at all', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'))
+    expect(body['error']).toBeUndefined()
+  })
+
+  it('refuses v0.3 with VersionNotSupported rather than a reply it cannot read', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'), {
+      'a2a-version': '0.3',
+    })
+    const error = body['error'] as Record<string, any>
+    expect(error.code).toBe(-32009)
+    expect(error.data[0].reason).toBe('VERSION_NOT_SUPPORTED')
+    expect(error.data[0].domain).toBe('a2a-protocol.org')
+  })
+
+  it('refuses a version that does not exist', async () => {
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'hi'), {
+      'a2a-version': '9.9',
+    })
+    expect((body['error'] as Record<string, unknown>)['code']).toBe(-32009)
+  })
+})
+
+describe('tenant routing', () => {
+  it('refuses a tenant this interface never declared', async () => {
     const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
       jsonrpc: '2.0',
       id: 1,
       method: 'SendMessage',
       params: {
-        message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'ping' }] },
+        tenant: 'other',
+        message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }] },
       },
     })
-    const task = body['result'] as Record<string, any>
-    expect(task.status.state).toBe('TASK_STATE_COMPLETED')
+    expect((body['error'] as Record<string, unknown>)['code']).toBe(-32602)
+  })
+})
+
+describe('GetExtendedAgentCard', () => {
+  it('reveals the withheld skills to an authenticated peer', async () => {
+    const publicCard = await (await fetch(app!.cardUrl)).json() as Record<string, any>
+    expect(publicCard.capabilities.extendedAgentCard).toBe(true)
+    expect(publicCard.skills.map((skill: any) => skill.id)).toEqual(['general'])
+
+    const { body } = await rpc(app!.rpcUrl, ALICE_TOKEN, {
+      jsonrpc: '2.0', id: 1, method: 'GetExtendedAgentCard',
+    })
+    const card = body['result'] as Record<string, any>
+    expect(card.skills.map((skill: any) => skill.id))
+      .toEqual(['general', 'internal-diagnostics'])
+  })
+
+  it('needs a credential like every other method', async () => {
+    const { status } = await rpc(app!.rpcUrl, undefined, {
+      jsonrpc: '2.0', id: 1, method: 'GetExtendedAgentCard',
+    })
+    expect(status).toBe(401)
   })
 })
 
 describe('peer isolation', () => {
   it('refuses another peer the use of a contextId, indistinguishably from absent', async () => {
     const first = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'alice work'))
-    const aliceContext = (first.body['result'] as Record<string, any>).contextId as string
+    const aliceContext = sentTask(first.body).contextId as string
 
     const stolen = await rpc(app!.rpcUrl, BOB_TOKEN, sendRequest(2, 'peek', aliceContext))
     const invented = await rpc(app!.rpcUrl, BOB_TOKEN, sendRequest(3, 'peek', 'made-up-context'))
@@ -217,11 +337,20 @@ describe('peer isolation', () => {
 
   it("reports another peer's task as not found", async () => {
     const first = await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'alice work'))
-    const taskId = (first.body['result'] as Record<string, any>).id as string
+    const taskId = sentTask(first.body).id as string
     const { body } = await rpc(app!.rpcUrl, BOB_TOKEN, {
-      jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId },
+      jsonrpc: '2.0', id: 2, method: 'GetTask', params: { id: taskId },
     })
     expect((body['error'] as Record<string, unknown>)['code']).toBe(-32001)
+  })
+
+  it("never lists another peer's tasks", async () => {
+    await rpc(app!.rpcUrl, ALICE_TOKEN, sendRequest(1, 'alice work'))
+    const { body } = await rpc(app!.rpcUrl, BOB_TOKEN, {
+      jsonrpc: '2.0', id: 2, method: 'ListTasks', params: {},
+    })
+    expect((body['result'] as Record<string, any>).tasks).toEqual([])
+    expect((body['result'] as Record<string, any>).totalSize).toBe(0)
   })
 })
 
@@ -235,11 +364,10 @@ describe('anti-loop cap', () => {
     })
     try {
       const first = await rpc(app2.rpcUrl, ALICE_TOKEN, sendRequest(1, 'one'))
-      const contextId = (first.body['result'] as Record<string, any>).contextId as string
+      const contextId = sentTask(first.body).contextId as string
       await rpc(app2.rpcUrl, ALICE_TOKEN, sendRequest(2, 'two', contextId))
       const third = await rpc(app2.rpcUrl, ALICE_TOKEN, sendRequest(3, 'three', contextId))
-      const task = third.body['result'] as Record<string, any>
-      expect(task.status.state).toBe('rejected')
+      expect(sentTask(third.body).status.state).toBe('TASK_STATE_REJECTED')
     } finally {
       await app2.stop()
     }

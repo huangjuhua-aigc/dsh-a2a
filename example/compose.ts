@@ -53,7 +53,7 @@ export interface ComposeOptions {
   trustedPeers?: string[]
   /** Cap on turns per context before rejection. */
   maxContextTurns?: number
-  /** Whether `message/send` blocks for the terminal state. */
+  /** Whether `SendMessage` waits for the terminal state. */
   sendMode?: 'block' | 'immediate'
   /** How long a blocking send waits before handing back a non-terminal task. */
   blockTimeoutMs?: number
@@ -119,14 +119,13 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const model = useReal
     ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
     : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
-  // The durable task read model: without it, tasks/get cannot answer once a
+  // The durable task read model: without it, GetTask cannot answer once a
   // task settles, and a polling peer never learns its result.
   await ctx.plugin(SessionProjections)
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: options.port ?? 0 })
 
   const config: A2AServerConfig = {
     basePath: '/a2a',
-    protocolVersion: '0.3.0',
     provider: model.provider,
     model: model.id,
     card: {
@@ -138,6 +137,14 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
         name: 'general',
         description: 'Answers questions and runs tasks.',
         tags: ['general'],
+      }],
+      // Declared so the demo can exercise GetExtendedAgentCard: this skill is
+      // absent from the anonymous card and appears only after authentication.
+      extendedSkills: [{
+        id: 'internal-diagnostics',
+        name: 'internal diagnostics',
+        description: 'Reports harness internals. Authenticated peers only.',
+        tags: ['internal'],
       }],
     },
     peers: Object.fromEntries(

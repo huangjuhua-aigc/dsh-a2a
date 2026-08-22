@@ -90,7 +90,7 @@ export function artifactsFromTexts(taskId: A2ATaskId, texts: readonly string[]):
   return [{
     artifactId: `${taskId}-result`,
     name: 'result',
-    parts: [{ kind: 'text', text: joined }],
+    parts: [{ text: joined, mediaType: 'text/plain' }],
   }]
 }
 
@@ -104,8 +104,8 @@ export function artifactsFromTexts(taskId: A2ATaskId, texts: readonly string[]):
  * @returns the A2A state to settle with.
  */
 export function stateFromEnding(endReason: string | undefined): A2ATaskState {
-  if (endReason === undefined) return 'canceled'
-  if (endReason === 'error') return 'failed'
-  if (endReason === 'cancelled' || endReason === 'canceled') return 'canceled'
-  return 'completed'
+  if (endReason === undefined) return 'TASK_STATE_CANCELED'
+  if (endReason === 'error') return 'TASK_STATE_FAILED'
+  if (endReason === 'cancelled' || endReason === 'canceled') return 'TASK_STATE_CANCELED'
+  return 'TASK_STATE_COMPLETED'
 }

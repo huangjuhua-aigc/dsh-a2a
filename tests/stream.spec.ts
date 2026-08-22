@@ -1,10 +1,14 @@
 /**
- * End-to-end: `message/stream` and `tasks/resubscribe` over real SSE.
+ * End-to-end: `SendStreamingMessage` and `SubscribeToTask` over real SSE.
  *
  * The stub adapter can hold a turn open, so these tests observe a task that is
- * genuinely still `working` rather than one that settled before the stream was
- * read — which is the only way in-flight behavior (resubscribe, cancel mid-run,
+ * genuinely still working rather than one that settled before the stream was
+ * read — which is the only way in-flight behavior (subscribe, cancel mid-run,
  * terminal frame on teardown) gets covered at all.
+ *
+ * v1.0 shapes every frame as a StreamResponse: the member name says what the
+ * frame is, and the stream's CLOSURE — not a `final` flag — says the task
+ * reached a terminal state.
  */
 
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -14,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { compose, type Composition } from '../example/compose.ts'
 
 const ALICE_TOKEN = 'tok-alice-sse'
+const RUNNING = ['TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING']
 
 let workspaceRoot: string
 let app: Composition
@@ -57,7 +62,6 @@ async function readStream(
   for (;;) {
     const { done, value } = await reader.read()
     if (value !== undefined) buffer += decoder.decode(value, { stream: true })
-
     let boundary = buffer.indexOf('\n\n')
     while (boundary !== -1) {
       const raw = buffer.slice(0, boundary)
@@ -78,22 +82,37 @@ async function readStream(
   return { contentType, frames }
 }
 
-/** Build a `message/stream` request. */
+/** Build a `SendStreamingMessage` request. */
 function streamRequest(id: number, text: string, contextId?: string): unknown {
   return {
     jsonrpc: '2.0',
     id,
-    method: 'message/stream',
+    method: 'SendStreamingMessage',
     params: {
       message: {
-        kind: 'message',
         messageId: `m-${id}`,
-        role: 'user',
-        parts: [{ kind: 'text', text }],
+        role: 'ROLE_USER',
+        parts: [{ text, mediaType: 'text/plain' }],
         ...contextId === undefined ? {} : { contextId },
       },
     },
   }
+}
+
+/** The task, status, or artifact a frame carries, whichever member is set. */
+function payload(frame: Frame | undefined): Record<string, any> | undefined {
+  const result = frame?.result
+  if (result === undefined) return undefined
+  return (result['task'] ?? result['statusUpdate'] ?? result['artifactUpdate']) as
+    Record<string, any> | undefined
+}
+
+/** The task id a frame refers to, whichever member carries it. */
+function frameTaskId(frame: Frame | undefined): string | undefined {
+  const result = frame?.result
+  if (result === undefined) return undefined
+  return (result['task']?.id ?? result['statusUpdate']?.taskId
+    ?? result['artifactUpdate']?.taskId) as string | undefined
 }
 
 beforeEach(async () => {
@@ -108,7 +127,7 @@ afterEach(async () => {
   await rm(workspaceRoot, { recursive: true, force: true })
 })
 
-describe('message/stream', () => {
+describe('SendStreamingMessage', () => {
   it('answers with an event stream', async () => {
     const { contentType } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
     expect(contentType).toContain('text/event-stream')
@@ -123,35 +142,46 @@ describe('message/stream', () => {
     }
   })
 
-  it('opens with a non-final status update', async () => {
+  it('opens with the task object, as v1.0 requires', async () => {
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
-    expect(frames[0]?.result['kind']).toBe('status-update')
-    expect(frames[0]?.result['final']).toBe(false)
-    expect(['submitted', 'working']).toContain(frames[0]?.result['status'].state)
+    const opening = frames[0]?.result['task'] as Record<string, any> | undefined
+    expect(opening).toBeDefined()
+    expect(RUNNING).toContain(opening!['status'].state)
+    expect(opening!['id']).toBeTruthy()
   })
 
-  it('delivers the agent output as an artifact update', async () => {
+  it('identifies each frame by member name, never by a kind tag', async () => {
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
-    const artifact = frames.find(frame => frame.result['kind'] === 'artifact-update')
+    for (const frame of frames) {
+      expect(Object.keys(frame.result)).toHaveLength(1)
+      expect(['task', 'message', 'statusUpdate', 'artifactUpdate'])
+        .toContain(Object.keys(frame.result)[0])
+      expect(payload(frame)).not.toHaveProperty('kind')
+    }
+  })
+
+  it('delivers the agent output as a wrapped artifact update', async () => {
+    const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
+    const artifact = frames.find(frame => frame.result['artifactUpdate'] !== undefined)
     expect(artifact).toBeDefined()
-    expect(artifact?.result['artifact'].parts[0].text).toContain('echo: ping')
-    expect(artifact?.result['lastChunk']).toBe(true)
+    expect(artifact?.result['artifactUpdate'].artifact.parts[0].text).toContain('echo: ping')
+    expect(artifact?.result['artifactUpdate'].lastChunk).toBe(true)
+    expect(artifact?.result['artifactUpdate'].index).toBe(0)
   })
 
-  it('closes with a final status update and then ends the stream', async () => {
+  it('closes on a terminal status update, with no final flag anywhere', async () => {
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
     const last = frames.at(-1)
-    expect(last?.result['kind']).toBe('status-update')
-    expect(last?.result['final']).toBe(true)
-    expect(last?.result['status'].state).toBe('completed')
-    // Exactly one final frame, and it is the last thing on the wire.
-    expect(frames.filter(frame => frame.result['final'] === true)).toHaveLength(1)
+    expect(last?.result['statusUpdate']).toBeDefined()
+    expect(last?.result['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
+    // v1.0 removed `final`: closing the stream IS the signal.
+    for (const frame of frames) expect(payload(frame)).not.toHaveProperty('final')
   })
 
   it('keeps taskId and contextId stable across every frame', async () => {
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
-    const taskIds = new Set(frames.map(frame => frame.result['taskId']))
-    const contextIds = new Set(frames.map(frame => frame.result['contextId']))
+    const taskIds = new Set(frames.map(frameTaskId))
+    const contextIds = new Set(frames.map(frame => payload(frame)?.['contextId']))
     expect(taskIds.size).toBe(1)
     expect(contextIds.size).toBe(1)
     expect([...taskIds][0]).toBeTruthy()
@@ -159,34 +189,16 @@ describe('message/stream', () => {
 
   it('continues an existing context', async () => {
     const first = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'first'))
-    const contextId = first.frames[0]?.result['contextId'] as string
+    const contextId = payload(first.frames[0])?.['contextId'] as string
 
     const second = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(2, 'second', contextId))
-    expect(second.frames[0]?.result['contextId']).toBe(contextId)
-    expect(second.frames.at(-1)?.result['status'].state).toBe('completed')
-  })
-})
-
-describe('message/stream in the v1.0 dialect', () => {
-  it('wraps status updates in a StreamResponse member with the v1.0 enum', async () => {
-    const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'SendStreamingMessage',
-      params: { message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'ping' }] } },
-    })
-    const opening = frames[0]?.result as Record<string, any>
-    expect(opening['statusUpdate']).toBeDefined()
-    expect(String(opening['statusUpdate'].status.state)).toMatch(/^TASK_STATE_/)
-
-    const final = frames.at(-1)?.result as Record<string, any>
-    expect(final['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
-    expect(final['statusUpdate'].final).toBe(true)
+    expect(payload(second.frames[0])?.['contextId']).toBe(contextId)
+    expect(second.frames.at(-1)?.result['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
   })
 })
 
 describe('a task held open', () => {
-  it('reports working while the turn is still running, then completes', async () => {
+  it('reports a running task while the turn is still going, then completes', async () => {
     const release = app.adapter.hold()
     const framesSeen: Frame[] = []
     const streaming = readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'slow'), (frame) => {
@@ -195,12 +207,11 @@ describe('a task held open', () => {
     // The opening frame must arrive before the turn produces anything.
     await new Promise(resolve => setTimeout(resolve, 200))
     expect(framesSeen.length).toBeGreaterThan(0)
-    expect(framesSeen[0]?.result['final']).toBe(false)
+    expect(RUNNING).toContain(framesSeen[0]?.result['task'].status.state)
 
     release()
     const { frames } = await streaming
-    expect(frames.at(-1)?.result['status'].state).toBe('completed')
-    expect(frames.at(-1)?.result['final']).toBe(true)
+    expect(frames.at(-1)?.result['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
   })
 
   it('sends a terminal frame on teardown instead of dropping the socket', async () => {
@@ -216,8 +227,7 @@ describe('a task held open', () => {
 
     const { frames } = await streaming
     const last = frames.at(-1)
-    expect(last?.result['final']).toBe(true)
-    expect(last?.result['status'].state).toBe('canceled')
+    expect(last?.result['statusUpdate'].status.state).toBe('TASK_STATE_CANCELED')
   })
 
   it('cancels a running task and settles the stream as canceled', async () => {
@@ -227,25 +237,24 @@ describe('a task held open', () => {
       opened.push(frame)
     })
     await new Promise(resolve => setTimeout(resolve, 200))
-    const taskId = opened[0]?.result['taskId'] as string
+    const taskId = frameTaskId(opened[0])
     expect(taskId).toBeTruthy()
 
     const cancelled = await fetch(app.rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ALICE_TOKEN}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/cancel', params: { taskId } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'CancelTask', params: { id: taskId } }),
     })
     const body = await cancelled.json() as Record<string, any>
-    expect(body.result.status.state).toBe('canceled')
+    expect(body.result.status.state).toBe('TASK_STATE_CANCELED')
 
     release()
     const { frames } = await streaming
-    expect(frames.at(-1)?.result['status'].state).toBe('canceled')
-    expect(frames.at(-1)?.result['final']).toBe(true)
+    expect(frames.at(-1)?.result['statusUpdate'].status.state).toBe('TASK_STATE_CANCELED')
   })
 })
 
-describe('tasks/resubscribe', () => {
+describe('SubscribeToTask', () => {
   it('reattaches to a task that is still running', async () => {
     const release = app.adapter.hold()
     const opened: Frame[] = []
@@ -253,36 +262,38 @@ describe('tasks/resubscribe', () => {
       opened.push(frame)
     })
     await new Promise(resolve => setTimeout(resolve, 200))
-    const taskId = opened[0]?.result['taskId'] as string
+    const taskId = frameTaskId(opened[0])
 
     const resubscribed = readStream(app.rpcUrl, ALICE_TOKEN, {
-      jsonrpc: '2.0', id: 9, method: 'tasks/resubscribe', params: { taskId },
+      jsonrpc: '2.0', id: 9, method: 'SubscribeToTask', params: { id: taskId },
     })
     await new Promise(resolve => setTimeout(resolve, 100))
 
     release()
     const [first, second] = await Promise.all([original, resubscribed])
     // Both streams observe the same task reaching the same terminal state.
-    expect(first.frames.at(-1)?.result['status'].state).toBe('completed')
-    expect(second.frames.at(-1)?.result['status'].state).toBe('completed')
-    expect(second.frames.at(-1)?.result['taskId']).toBe(taskId)
+    expect(first.frames.at(-1)?.result['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
+    expect(second.frames.at(-1)?.result['statusUpdate'].status.state).toBe('TASK_STATE_COMPLETED')
+    // A new subscriber's first frame is the task's state at the time it joined.
+    expect(second.frames[0]?.result['task']).toBeDefined()
+    expect(frameTaskId(second.frames[0])).toBe(taskId)
   })
 
-  it('delivers the outcome of an already-settled task in one terminal frame', async () => {
-    // A peer that reconnects after the fact still deserves the result; the
-    // answer comes from the projection, not from a live slot.
+  it('refuses a task that already reached a terminal state', async () => {
+    // v1.0 states this is an UnsupportedOperation; the outcome is still one
+    // GetTask away, so nothing is lost by not streaming it.
     const { frames } = await readStream(app.rpcUrl, ALICE_TOKEN, streamRequest(1, 'ping'))
-    const taskId = frames[0]?.result['taskId'] as string
+    const taskId = frameTaskId(frames[0])
     await new Promise(resolve => setTimeout(resolve, 200))
 
-    const again = await readStream(app.rpcUrl, ALICE_TOKEN, {
-      jsonrpc: '2.0', id: 9, method: 'tasks/resubscribe', params: { taskId },
+    const response = await fetch(app.rpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${ALICE_TOKEN}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'SubscribeToTask', params: { id: taskId } }),
     })
-    expect(again.contentType).toContain('text/event-stream')
-    expect(again.frames).toHaveLength(1)
-    expect(again.frames[0]?.result['final']).toBe(true)
-    expect(again.frames[0]?.result['status'].state).toBe('completed')
-    expect(again.frames[0]?.result['taskId']).toBe(taskId)
+    const body = await response.json() as Record<string, any>
+    expect(body.error.code).toBe(-32004)
+    expect(body.error.data[0].reason).toBe('UNSUPPORTED_OPERATION')
   })
 
   it('still reports a task this peer does not own as not found', async () => {
@@ -290,18 +301,18 @@ describe('tasks/resubscribe', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ALICE_TOKEN}` },
       body: JSON.stringify({
-        jsonrpc: '2.0', id: 2, method: 'tasks/resubscribe', params: { taskId: 'never-existed' },
+        jsonrpc: '2.0', id: 2, method: 'SubscribeToTask', params: { id: 'never-existed' },
       }),
     })
     const body = await response.json() as Record<string, any>
     expect(body.error.code).toBe(-32001)
   })
 
-  it('refuses to resubscribe without a taskId', async () => {
+  it('refuses to subscribe without an id', async () => {
     const response = await fetch(app.rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${ALICE_TOKEN}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/resubscribe', params: {} }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'SubscribeToTask', params: {} }),
     })
     const body = await response.json() as Record<string, any>
     expect(body.error.code).toBe(-32602)

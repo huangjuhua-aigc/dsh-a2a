@@ -1,10 +1,15 @@
 /**
  * Inbound A2A protocol server for DeepSeek Harness.
  *
- * Publishes an Agent Card at a well-known URI and serves the A2A v0.3.0
- * JSON-RPC binding, so any compliant peer that knows this deployment's URL can
- * discover it and submit tasks to a harness agent. There is no outbound client:
- * this plugin never connects to another agent.
+ * Publishes an Agent Card at a well-known URI and serves the A2A v1.0 JSON-RPC
+ * binding, so any compliant peer that knows this deployment's URL can discover
+ * it and submit tasks to a harness agent. There is no outbound client: this
+ * plugin never connects to another agent.
+ *
+ * v1.0 is the ONLY protocol version served. The v0.3 method names, `kind`
+ * discriminators, and lowercase enums are gone rather than aliased: a reply
+ * this server produces is v1.0 JSON, and a v0.3 client could not read it, so
+ * answering a v0.3 request would fail further from its cause than refusing it.
  *
  * It is a TRANSPORT ADAPTER, not a capability seam — the same self-limitation
  * `dsh-acp` states. It exposes no editor navigation, transcript replay,
@@ -25,10 +30,12 @@ import {
   A2AContextId,
   A2ATaskId,
   buildAgentCard,
+  buildExtendedAgentCard,
   nowIso,
   type A2AAgentCard,
   type A2ATask,
   type A2ATaskState,
+  type CardInput,
 } from './protocol/index.ts'
 import { assertConfigCoherent, Config, type A2AServerConfig } from './config.ts'
 import { ContextRegistry, type Activation } from './contexts.ts'
@@ -187,13 +194,13 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     return `http://${host}${config.basePath}`
   }
 
-  const cardFor = (hostHeader: string | undefined): A2AAgentCard => buildAgentCard({
+  const cardInput = (hostHeader: string | undefined): CardInput => ({
     name: config.card.name,
     description: config.card.description,
     version: '0.1.0',
     url: publicUrl(hostHeader),
-    protocolVersion: config.protocolVersion,
     skills: config.card.skills,
+    extendedSkills: config.card.extendedSkills,
     streaming: true,
     pushNotifications: config.push.enabled,
     authRequired: true,
@@ -204,11 +211,17 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       : { provider: config.card.provider },
   })
 
+  const cardFor = (hostHeader: string | undefined): A2AAgentCard =>
+    buildAgentCard(cardInput(hostHeader))
+
+  const extendedCardFor = (hostHeader: string | undefined): A2AAgentCard | undefined =>
+    buildExtendedAgentCard(cardInput(hostHeader))
+
   // ── Durable task edges ─────────────────────────────────────────────────
   /**
    * Append one `a2a/task` lifecycle edge to the context's own session log.
    *
-   * This is what makes `tasks/get` answerable after a restart: the state lives
+   * This is what makes `GetTask` answerable after a restart: the state lives
    * in the append-only log, not in this process's memory.
    */
   const appendTaskEdge = (
@@ -240,7 +253,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     for (const slot of activation.slots.values()) {
       if (slot.messageId === message.id && slot.turn === undefined) {
         slot.turn = turn
-        appendTaskEdge(activation, slot.taskId, 'working', { turn })
+        appendTaskEdge(activation, slot.taskId, 'TASK_STATE_WORKING', { turn })
         return
       }
     }
@@ -269,7 +282,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         if (reason === 'error') {
           // A model error on the correlated turn fails the task immediately
           // rather than waiting out whole-agent quiescence.
-          settleSlot(activation, slot, 'failed', reason)
+          settleSlot(activation, slot, 'TASK_STATE_FAILED', reason)
         } else {
           slot.endReason = reason
         }
@@ -281,7 +294,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     const activation = ownedActivation(agent)
     if (activation === undefined) return
     for (const slot of activation.slots.values()) {
-      if (slot.turn === turn) settleSlot(activation, slot, 'failed', 'error')
+      if (slot.turn === turn) settleSlot(activation, slot, 'TASK_STATE_FAILED', 'error')
     }
   })
 
@@ -383,7 +396,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     )
   } else {
     logger.warn(
-      'a2a: no sessionProjections registry composed; tasks/get cannot answer '
+      'a2a: no sessionProjections registry composed; GetTask cannot answer '
       + 'once a task settles, so a polling peer will never learn its result',
     )
   }
@@ -402,8 +415,37 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     // activation's, so a context that somehow served two identities could not
     // leak one's task to the other.
     if (view === undefined || view.peer !== activation.peer) return undefined
+    return projectedTask(activation, taskId, view)
+  }
+
+  /**
+   * Every task the projection holds for one context, for `ListTasks`.
+   *
+   * Ownership is re-checked per row for the same reason the single-task read
+   * checks it: the RECORDED peer is authoritative, not the activation's.
+   */
+  const readProjectedTasks = (activation: Activation): A2ATask[] => {
+    if (projections === undefined) return []
+    const snapshot = projections.snapshot(activation.agent.session)
+    const tasks = snapshot.values.a2aTask?.tasks ?? {}
+    return Object.values(tasks)
+      .filter(view => view.peer === activation.peer)
+      .map(view => projectedTask(activation, A2ATaskId(view.taskId), view))
+  }
+
+  /**
+   * Render one projected row as an A2A task.
+   * @param activation - the owning context.
+   * @param taskId - the task's id.
+   * @param view - the folded row.
+   * @returns the wire task.
+   */
+  function projectedTask(
+    activation: Activation,
+    taskId: A2ATaskId,
+    view: { state: A2ATaskState; output?: string | undefined; stopReason?: string | undefined; updatedAt: string },
+  ): A2ATask {
     return {
-      kind: 'task',
       id: taskId,
       contextId: activation.contextId,
       status: { state: view.state, timestamp: view.updatedAt },
@@ -412,7 +454,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         : [{
           artifactId: `${taskId}-result`,
           name: 'result',
-          parts: [{ kind: 'text', text: view.output }],
+          parts: [{ text: view.output, mediaType: 'text/plain' }],
         }],
       ...view.stopReason === undefined ? {} : { metadata: { dsh: { stopReason: view.stopReason } } },
     }
@@ -421,6 +463,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   // ── Router ─────────────────────────────────────────────────────────────
   const deps: RouterDeps = {
     readProjectedTask,
+    readProjectedTasks,
     config,
     contexts,
     turns,
@@ -430,6 +473,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     resolvePeerSecrets,
     identify: identifyPeer,
     cardFor,
+    extendedCardFor,
     createActivation,
     submit: async (activation, text, peer) => {
       const liveAgent = ctx.agents.get(activation.agent.id)
@@ -445,7 +489,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       // Arm the slot before followup(): a listener-driven synchronous turn would
       // otherwise slip past correlation and leave the task turnless forever.
       activation.slots.set(taskId, slot)
-      appendTaskEdge(activation, taskId, 'submitted')
+      appendTaskEdge(activation, taskId, 'TASK_STATE_SUBMITTED')
       try {
         activation.agent.followup(message)
       } catch (error: unknown) {
@@ -460,11 +504,10 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     },
     cancel: (activation, slot) => {
       activation.agent.cancel({ kind: 'user' }, { keepInbox: true })
-      settleSlot(activation, slot, 'canceled', 'cancelled')
+      settleSlot(activation, slot, 'TASK_STATE_CANCELED', 'cancelled')
       turns.reset(activation.contextId)
     },
     taskSnapshot: (activation, slot, state, artifacts, stopReason): A2ATask => ({
-      kind: 'task',
       id: slot.taskId,
       contextId: activation.contextId,
       status: { state, timestamp: nowIso() },
@@ -526,7 +569,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     for (const activation of activations) {
       activation.agent.cancel({ kind: 'user' })
       for (const slot of [...activation.slots.values()]) {
-        settleSlot(activation, slot, 'canceled', 'cancelled')
+        settleSlot(activation, slot, 'TASK_STATE_CANCELED', 'cancelled')
       }
     }
     rateLimiter.clear()

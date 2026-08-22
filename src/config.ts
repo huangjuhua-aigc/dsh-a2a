@@ -47,13 +47,28 @@ export interface IsolationConfig {
   peerWorkspaces: Record<string, string>
 }
 
+/** One declared skill, as it appears on the Agent Card. */
+export interface SkillConfig {
+  id: string
+  name: string
+  description: string
+  tags: string[]
+}
+
 /** Agent Card content and exposure. */
 export interface CardConfig {
   name: string
   description: string
   /** Serve the card without a credential, as discovery expects. */
   public: boolean
-  skills: { id: string; name: string; description: string; tags: string[] }[]
+  skills: SkillConfig[]
+  /**
+   * Skills revealed only through `GetExtendedAgentCard`, after a peer has
+   * authenticated. Declaring any turns on `capabilities.extendedAgentCard`;
+   * leaving this empty means the deployment has no extended card, and the
+   * method answers with the spec's own ExtendedAgentCardNotConfiguredError.
+   */
+  extendedSkills: SkillConfig[]
   provider?: { organization: string; url: string }
 }
 
@@ -81,7 +96,6 @@ export interface PushConfig {
 export interface A2AServerConfig {
   basePath: string
   publicUrl?: string
-  protocolVersion: string
   /**
    * Provider route for every agent this server creates. Optional so another
    * `agent/request` listener may supply the target instead; a runnable
@@ -118,7 +132,6 @@ export interface A2AServerConfig {
 export const Config: Schema<A2AServerConfig> = Schema.object({
   basePath: Schema.string().default('/a2a'),
   publicUrl: Schema.string(),
-  protocolVersion: Schema.string().default('0.3.0'),
   provider: Schema.string(),
   model: Schema.string(),
 
@@ -127,6 +140,12 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
     description: Schema.string().default('A DeepSeek Harness agent reachable over A2A.'),
     public: Schema.boolean().default(true),
     skills: Schema.array(Schema.object({
+      id: Schema.string().required(),
+      name: Schema.string().required(),
+      description: Schema.string().default(''),
+      tags: Schema.array(Schema.string()).default([]),
+    })).default([]),
+    extendedSkills: Schema.array(Schema.object({
       id: Schema.string().required(),
       name: Schema.string().required(),
       description: Schema.string().default(''),

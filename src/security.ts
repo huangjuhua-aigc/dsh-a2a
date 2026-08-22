@@ -172,7 +172,51 @@ const REDACTIONS: readonly (readonly [RegExp, string])[] = [
 ]
 
 /**
- * Scrub credential-shaped substrings before text leaves this process.
+ * A UTF-16 code unit that is half of a surrogate pair with no other half.
+ *
+ * Either a high surrogate not followed by a low one, or a low surrogate not
+ * preceded by a high one. Such a string is not valid Unicode and cannot be
+ * encoded to UTF-8.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+
+/**
+ * Replace lone surrogates so the text can be encoded as UTF-8.
+ *
+ * DEFENSIVE, against a defect upstream of this plugin: the model streaming path
+ * can hand us text whose multi-byte characters were decoded across a chunk
+ * boundary, leaving orphan bytes as lone surrogates (a split `议`, U+8BAE =
+ * `E8 AE AE`, leaves `\uDCAE`). Non-ASCII replies — Chinese, Japanese, emoji —
+ * are where this shows, and it is invisible in a terminal.
+ *
+ * A transport must not put that on the wire. `JSON.stringify` will happily emit
+ * `"\udcae"`, which is legal JSON *syntax* but decodes to a string a peer
+ * cannot then encode: Python's `json.loads` accepts it and the result raises on
+ * `.encode('utf-8')`, and Go and Rust decoders reject or mangle it. Replacing
+ * with U+FFFD is what the byte serializer would do anyway, so nothing on the
+ * wire changes — the difference is that the JSON now carries a valid string
+ * instead of an escape that detonates in the peer's decoder.
+ *
+ * Equivalent to ES2024's `String.prototype.toWellFormed()`, spelled out because
+ * this package compiles against `lib: ES2023`.
+ *
+ * Remove this once the upstream streaming decoder is chunk-safe; until then the
+ * marker is deliberate, because a lone surrogate means a character WAS lost and
+ * silently deleting the evidence is worse than showing it.
+ * @param text - the text about to be sent.
+ * @returns the same text, valid Unicode.
+ */
+export function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATE, '�')
+}
+
+/**
+ * Make model-authored text safe to send to a peer.
+ *
+ * Two guarantees, both at the LAST point before text leaves the process:
+ * no credential-shaped substring, and no code unit that cannot be encoded.
+ * They live in one function because there is one outbound text path, and a
+ * future second path must not be able to pick up only half of this.
  *
  * This applies to REPLIES, not just to a hypothetical outbound client: an
  * inbound-only server still ships model-authored text to a peer.
@@ -180,7 +224,7 @@ const REDACTIONS: readonly (readonly [RegExp, string])[] = [
  * @returns the scrubbed text.
  */
 export function redactOutbound(text: string): string {
-  let out = text
+  let out = wellFormed(text)
   for (const [pattern, replacement] of REDACTIONS) out = out.replace(pattern, replacement)
   return out
 }
