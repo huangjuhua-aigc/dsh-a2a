@@ -17,7 +17,7 @@
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
-  <img src="https://img.shields.io/badge/tests-160-2EA44F?style=flat" alt="160 tests">
+  <img src="https://img.shields.io/badge/tests-166-2EA44F?style=flat" alt="166 tests">
 </p>
 
 `dsh-a2a-server` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)

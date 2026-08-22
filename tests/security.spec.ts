@@ -7,6 +7,7 @@ import {
   RateLimiter,
   redactOutbound,
   TurnTracker,
+  wellFormed,
 } from '../src/security.ts'
 
 describe('bearer parsing', () => {
@@ -139,5 +140,47 @@ describe('outbound redaction', () => {
   it('leaves ordinary prose alone', () => {
     const text = 'The build succeeded in 42 seconds.'
     expect(redactOutbound(text)).toBe(text)
+  })
+
+  it('also repairs text that cannot be encoded, so one path covers both', () => {
+    // Composing the two is what stops a future outbound path from picking up
+    // only half of what "safe to send" means.
+    expect(redactOutbound('议\udcae')).toBe('议�')
+  })
+})
+
+describe('unicode repair', () => {
+  it('leaves well-formed text untouched, non-ASCII included', () => {
+    const zh = 'A2A 协议让不同厂商的 AI 智能体协作。'
+    expect(wellFormed(zh)).toBe(zh)
+    expect(wellFormed('')).toBe('')
+  })
+
+  it('keeps a real surrogate PAIR intact', () => {
+    // An emoji is a legitimate pair; "repairing" it would corrupt valid text.
+    const emoji = '🚀 shipped'
+    expect(wellFormed(emoji)).toBe(emoji)
+    expect([...emoji]).toHaveLength(9)
+  })
+
+  it('replaces the orphan byte a split multi-byte character leaves behind', () => {
+    // U+8BAE is E8 AE AE in UTF-8; a decoder that split the sequence leaves
+    // U+DCAE behind. This is what the model streaming path actually produces.
+    expect(wellFormed('协议\udcae是')).toBe('协议�是')
+    expect(wellFormed('\udc80\udcaa')).toBe('��')
+  })
+
+  it('replaces a lone HIGH surrogate too', () => {
+    expect(wellFormed('a\ud83das')).toBe('a�as')
+  })
+
+  it('produces text that survives a UTF-8 round trip', () => {
+    // The whole point: what a peer decodes must be re-encodable.
+    const broken = '协议\udcae是一个开放标准'
+    const repaired = wellFormed(broken)
+    expect(Buffer.from(repaired, 'utf8').toString('utf8')).toBe(repaired)
+    // The raw text serializes to an escape a strict peer decoder chokes on.
+    expect(JSON.stringify(broken)).toContain('\\udcae')
+    expect(JSON.stringify(repaired)).not.toContain('\\udcae')
   })
 })
