@@ -50,23 +50,23 @@ describe('the same-reference discipline', () => {
 
   it('returns a NEW state object for an edge it folds', () => {
     const state = a2aTaskProjection.init()
-    expect(a2aTaskProjection.apply(state, edge('t1', 'submitted'))).not.toBe(state)
+    expect(a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_SUBMITTED'))).not.toBe(state)
   })
 })
 
 describe('folding task lifecycle', () => {
   it('records a submitted task', () => {
-    const state = a2aTaskProjection.apply(a2aTaskProjection.init(), edge('t1', 'submitted'))
-    expect(state.tasks['t1']?.state).toBe('submitted')
+    const state = a2aTaskProjection.apply(a2aTaskProjection.init(), edge('t1', 'TASK_STATE_SUBMITTED'))
+    expect(state.tasks['t1']?.state).toBe('TASK_STATE_SUBMITTED')
     expect(state.tasks['t1']?.peer).toBe('alice')
   })
 
   it('advances a task through its transitions', () => {
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'submitted'))
-    state = a2aTaskProjection.apply(state, edge('t1', 'working'))
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed', { stopReason: 'stop' }))
-    expect(state.tasks['t1']?.state).toBe('completed')
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_SUBMITTED'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_WORKING'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { stopReason: 'stop' }))
+    expect(state.tasks['t1']?.state).toBe('TASK_STATE_COMPLETED')
     expect(state.tasks['t1']?.stopReason).toBe('stop')
   })
 
@@ -75,33 +75,33 @@ describe('folding task lifecycle', () => {
     // hold the complete post-change state, so the fold can serve the answer
     // without reaching back into the message log.
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'working'))
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed', { output: 'the answer is 42' }))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_WORKING'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { output: 'the answer is 42' }))
     expect(state.tasks['t1']?.output).toBe('the answer is 42')
   })
 
   it('keeps tasks independent within one session', () => {
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed'))
-    state = a2aTaskProjection.apply(state, edge('t2', 'working'))
-    expect(state.tasks['t1']?.state).toBe('completed')
-    expect(state.tasks['t2']?.state).toBe('working')
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED'))
+    state = a2aTaskProjection.apply(state, edge('t2', 'TASK_STATE_WORKING'))
+    expect(state.tasks['t1']?.state).toBe('TASK_STATE_COMPLETED')
+    expect(state.tasks['t2']?.state).toBe('TASK_STATE_WORKING')
   })
 
   it('treats a terminal state as final', () => {
     // A late or duplicated edge must not reopen a settled task: the peer has
     // already been told the outcome.
-    let state = a2aTaskProjection.apply(a2aTaskProjection.init(), edge('t1', 'completed'))
+    let state = a2aTaskProjection.apply(a2aTaskProjection.init(), edge('t1', 'TASK_STATE_COMPLETED'))
     const settled = state
-    state = a2aTaskProjection.apply(state, edge('t1', 'working'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_WORKING'))
     expect(state).toBe(settled)
-    expect(state.tasks['t1']?.state).toBe('completed')
+    expect(state.tasks['t1']?.state).toBe('TASK_STATE_COMPLETED')
   })
 
   it('records who submitted each task, for the ownership check', () => {
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed', { peer: 'alice' }))
-    state = a2aTaskProjection.apply(state, edge('t2', 'completed', { peer: 'bob' }))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { peer: 'alice' }))
+    state = a2aTaskProjection.apply(state, edge('t2', 'TASK_STATE_COMPLETED', { peer: 'bob' }))
     expect(state.tasks['t1']?.peer).toBe('alice')
     expect(state.tasks['t2']?.peer).toBe('bob')
   })
@@ -110,8 +110,8 @@ describe('folding task lifecycle', () => {
 describe('the view', () => {
   it('produces a schema-valid wire payload', () => {
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed', { stopReason: 'stop' }))
-    state = a2aTaskProjection.apply(state, edge('t2', 'working'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { stopReason: 'stop' }))
+    state = a2aTaskProjection.apply(state, edge('t2', 'TASK_STATE_WORKING'))
     expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.view(state))).not.toThrow()
   })
 
@@ -122,7 +122,7 @@ describe('the view', () => {
 
   it('keeps the state plain JSON, as the persisted cache requires', () => {
     let state = a2aTaskProjection.init()
-    state = a2aTaskProjection.apply(state, edge('t1', 'completed'))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED'))
     expect(JSON.parse(JSON.stringify(state))).toEqual(state)
   })
 })

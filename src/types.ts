@@ -4,7 +4,7 @@
  * Two declaration merges carry the whole durable contract:
  *
  * - `a2a/task` extends `SessionEventMap` so a task's state lives in the
- *   append-only log. `tasks/get` after a restart therefore has an answer,
+ *   append-only log. `GetTask` after a restart therefore has an answer,
  *   which a process-local task table could never give.
  * - `a2aPeer` extends `MessageSourceMap` so an inbound message carries
  *   structured provenance instead of a warning string glued onto its text.
@@ -43,8 +43,8 @@ declare module '@deepseek-ai/dsh-session/types' {
        * Carried on the edge rather than derived later because of the
        * projection contract's whole-value rule — a state-carrying event must
        * hold the complete post-change state. Without it a peer polling
-       * `tasks/get` gets `completed` and an empty artifact list, which reads as
-       * "it worked and produced nothing" rather than "ask again".
+       * `GetTask` gets TASK_STATE_COMPLETED and an empty artifact list, which reads
+       * as "it worked and produced nothing" rather than "ask again".
        */
       output?: string
     }

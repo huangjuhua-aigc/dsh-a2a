@@ -1,6 +1,9 @@
 /**
  * Probe a running A2A server and report what it actually answers.
  *
+ * Every request here is A2A v1.0: PascalCase methods, `id` task references,
+ * member-discriminated parts, `TASK_STATE_*` enums, wrapped results.
+ *
  * Runs identically in bash and PowerShell — it is plain Node, so no shell
  * quoting rules apply to the JSON payloads.
  *
@@ -18,7 +21,11 @@ const origin = (process.argv[2] ?? process.env.A2A_ORIGIN ?? 'http://127.0.0.1:9
 const token = process.argv[3] ?? process.env.A2A_PROBE_TOKEN ?? 'demo123'
 
 const rpcUrl = `${origin}/a2a`
-const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
+const headers = {
+  'content-type': 'application/json',
+  authorization: `Bearer ${token}`,
+  'a2a-version': '1.0',
+}
 
 let passed = 0
 let failed = 0
@@ -27,10 +34,10 @@ let failed = 0
 function check(label, ok, detail) {
   if (ok) {
     passed += 1
-    console.log(`  [32mok[0m   ${label}${detail === undefined ? '' : `  [90m${detail}[0m`}`)
+    console.log(`  [32mok[0m   ${label}${detail === undefined ? '' : `  [90m${detail}[0m`}`)
   } else {
     failed += 1
-    console.log(`  [31mFAIL[0m ${label}${detail === undefined ? '' : `  ${detail}`}`)
+    console.log(`  [31mFAIL[0m ${label}${detail === undefined ? '' : `  ${detail}`}`)
   }
 }
 
@@ -45,18 +52,17 @@ async function rpc(body, extraHeaders = {}) {
   return { status: response.status, body: text.length > 0 ? JSON.parse(text) : {} }
 }
 
-/** Build a message/send or message/stream request. */
-function send(id, text, { method = 'message/send', contextId } = {}) {
+/** Build a SendMessage or SendStreamingMessage request. */
+function send(id, text, { method = 'SendMessage', contextId } = {}) {
   return {
     jsonrpc: '2.0',
     id,
     method,
     params: {
       message: {
-        kind: 'message',
         messageId: `probe-${id}`,
-        role: 'user',
-        parts: [{ kind: 'text', text }],
+        role: 'ROLE_USER',
+        parts: [{ text, mediaType: 'text/plain' }],
         ...contextId === undefined ? {} : { contextId },
       },
     },
@@ -88,9 +94,9 @@ async function stream(body) {
 /**
  * Return a task's committed output text, polling when the send was non-terminal.
  *
- * `sendMode: immediate` hands back a `working` task with no artifacts, so a
- * probe that read artifacts straight off the send response would report a
- * failure that is really just the deployment's send mode.
+ * `sendMode: immediate` hands back a WORKING task with no artifacts, so a probe
+ * that read artifacts straight off the send response would report a failure
+ * that is really just the deployment's send mode.
  */
 async function settledOutput(task) {
   if (task === undefined) return ''
@@ -98,14 +104,14 @@ async function settledOutput(task) {
   if (typeof fromSend === 'string' && fromSend.length > 0) return fromSend
   for (let attempt = 0; attempt < 120; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 500))
-    const polled = await rpc({ jsonrpc: '2.0', id: 900, method: 'tasks/get', params: { taskId: task.id } })
+    const polled = await rpc({ jsonrpc: '2.0', id: 900, method: 'GetTask', params: { id: task.id } })
     const text = polled.body.result?.artifacts?.[0]?.parts?.[0]?.text
     if (typeof text === 'string' && text.length > 0) return text
   }
   return ''
 }
 
-console.log(`\nProbing ${origin}\n`)
+console.log(`\nProbing ${origin}  (A2A v1.0)\n`)
 
 // Preflight: a refused connection is the overwhelmingly common failure here,
 // and an unhandled fetch rejection buries that behind a stack trace.
@@ -128,15 +134,23 @@ try {
 console.log('Discovery')
 const cardResponse = await fetch(`${origin}/.well-known/agent-card.json`)
 const card = await cardResponse.json()
-console.log(`  [90magent: ${card.name} ${card.version}[0m`)
+console.log(`  [90magent: ${card.name} ${card.version}[0m`)
+const iface = card.supportedInterfaces?.[0]
 check('agent card served anonymously', cardResponse.status === 200)
-check('protocolVersion', card.protocolVersion === '0.3.0', card.protocolVersion)
-check('preferredTransport JSONRPC', card.preferredTransport === 'JSONRPC')
-check('supportedInterfaces present (v1.0 readers)', Array.isArray(card.supportedInterfaces))
-check('declares the bearer scheme', card.securitySchemes?.bearer?.scheme === 'bearer')
+check('supportedInterfaces is the endpoint declaration', Array.isArray(card.supportedInterfaces))
+check('interface protocolVersion 1.0', iface?.protocolVersion === '1.0', iface?.protocolVersion)
+check('interface protocolBinding JSONRPC', iface?.protocolBinding === 'JSONRPC')
+check('no v0.3 card members remain',
+  card.protocolVersion === undefined && card.url === undefined
+  && card.preferredTransport === undefined && card.supportsAuthenticatedExtendedCard === undefined)
+check('declares the bearer scheme',
+  card.securitySchemes?.bearer?.httpAuthSecurityScheme?.scheme === 'Bearer')
+check('securityRequirements names it',
+  Array.isArray(card.securityRequirements)
+  && card.securityRequirements[0]?.schemes?.bearer !== undefined)
 check('streaming advertised', card.capabilities?.streaming === true)
 check('pushNotifications honestly false', card.capabilities?.pushNotifications === false)
-check('legacy agent.json also answers',
+check('legacy well-known path also answers',
   (await fetch(`${origin}/.well-known/agent.json`)).status === 200)
 
 // ── Authentication ───────────────────────────────────────────────────────
@@ -157,77 +171,146 @@ check('unknown token rejected 401', badToken.status === 401)
 check('GET on the rpc route rejected 405', (await fetch(rpcUrl)).status === 405)
 check('unknown route 404', (await fetch(`${origin}/nope`)).status === 404)
 
-// ── message/send ─────────────────────────────────────────────────────────
-console.log('\nmessage/send')
+// ── SendMessage ──────────────────────────────────────────────────────────
+console.log('\nSendMessage')
 const sent = await rpc(send(10, 'hello probe'))
-const task = sent.body.result
+const task = sent.body.result?.task
 check('accepted', sent.status === 200 && sent.body.error === undefined)
-check('returns a task', task?.kind === 'task', task?.id)
+check('result is wrapped in a task member', task !== undefined, task?.id)
+check('no kind discriminator', task?.kind === undefined)
+check('state uses the TASK_STATE_ spelling',
+  String(task?.status?.state).startsWith('TASK_STATE_'), task?.status?.state)
 check('mints a contextId', typeof task?.contextId === 'string')
 check('carries the real turn ending in metadata',
-  typeof task?.metadata?.dsh?.stopReason === 'string' || task?.status?.state === 'working',
+  typeof task?.metadata?.dsh?.stopReason === 'string'
+  || task?.status?.state === 'TASK_STATE_WORKING',
   task?.metadata?.dsh?.stopReason)
 
-// ── tasks/get, including after settlement ────────────────────────────────
-console.log('\ntasks/get  (the projection path)')
+// ── GetTask, including after settlement ──────────────────────────────────
+console.log('\nGetTask  (the projection path)')
 await new Promise(resolve => setTimeout(resolve, 600))
-const polled = await rpc({ jsonrpc: '2.0', id: 11, method: 'tasks/get', params: { taskId: task.id } })
+const polled = await rpc({ jsonrpc: '2.0', id: 11, method: 'GetTask', params: { id: task.id } })
 check('answers after the task settled', polled.body.error === undefined,
   polled.body.error?.message)
-check('reports a terminal state', ['completed', 'failed', 'canceled', 'rejected']
-  .includes(polled.body.result?.status?.state), polled.body.result?.status?.state)
-const polledAgain = await rpc({ jsonrpc: '2.0', id: 12, method: 'tasks/get', params: { taskId: task.id } })
+check('reports a terminal state', [
+  'TASK_STATE_COMPLETED', 'TASK_STATE_FAILED', 'TASK_STATE_CANCELED', 'TASK_STATE_REJECTED',
+].includes(polled.body.result?.status?.state), polled.body.result?.status?.state)
+const polledAgain = await rpc({ jsonrpc: '2.0', id: 12, method: 'GetTask', params: { id: task.id } })
 check('idempotent across repeated polls',
   polledAgain.body.result?.status?.state === polled.body.result?.status?.state)
 check('carries the agent output, not just the state',
   (polled.body.result?.artifacts?.[0]?.parts?.[0]?.text ?? '').length > 0,
   polled.body.result?.artifacts?.[0]?.parts?.[0]?.text)
-const missing = await rpc({ jsonrpc: '2.0', id: 13, method: 'tasks/get', params: { taskId: 'never-existed' } })
+const missing = await rpc({ jsonrpc: '2.0', id: 13, method: 'GetTask', params: { id: 'never-existed' } })
 check('unknown task is -32001', missing.body.error?.code === -32001)
+check('and carries a machine-readable reason',
+  missing.body.error?.data?.[0]?.reason === 'TASK_NOT_FOUND',
+  missing.body.error?.data?.[0]?.domain)
+const v03Params = await rpc({ jsonrpc: '2.0', id: 14, method: 'GetTask', params: { taskId: task.id } })
+check('v0.3 taskId parameter refused', v03Params.body.error?.code === -32602)
+
+// ── ListTasks ────────────────────────────────────────────────────────────
+console.log('\nListTasks')
+const listed = await rpc({ jsonrpc: '2.0', id: 15, method: 'ListTasks', params: {} })
+check('answers', listed.body.error === undefined, listed.body.error?.message)
+check('returns a task array', Array.isArray(listed.body.result?.tasks),
+  `${listed.body.result?.tasks?.length} task(s)`)
+check('nextPageToken is always present', typeof listed.body.result?.nextPageToken === 'string')
+check('reports totalSize', typeof listed.body.result?.totalSize === 'number')
+check('omits artifacts by default',
+  (listed.body.result?.tasks ?? []).every(t => t.artifacts === undefined))
+const withArtifacts = await rpc({
+  jsonrpc: '2.0', id: 16, method: 'ListTasks', params: { includeArtifacts: true },
+})
+check('includeArtifacts brings them back',
+  (withArtifacts.body.result?.tasks ?? []).some(t => Array.isArray(t.artifacts)))
+const paged = await rpc({ jsonrpc: '2.0', id: 17, method: 'ListTasks', params: { pageSize: 1 } })
+check('honors pageSize', (paged.body.result?.tasks ?? []).length <= 1)
+const filtered = await rpc({
+  jsonrpc: '2.0', id: 18, method: 'ListTasks',
+  params: { contextId: task.contextId, status: 'TASK_STATE_COMPLETED' },
+})
+check('filters by contextId and status', filtered.body.error === undefined,
+  `${filtered.body.result?.tasks?.length} match(es)`)
 
 // ── Context continuation ─────────────────────────────────────────────────
 console.log('\nContext continuation')
 const second = await rpc(send(20, 'second turn', { contextId: task.contextId }))
-check('same contextId accepted', second.body.result?.contextId === task.contextId)
+check('same contextId accepted', second.body.result?.task?.contextId === task.contextId)
 const foreign = await rpc(send(21, 'peek', { contextId: 'made-up-context' }))
 check('unknown contextId is -32602', foreign.body.error?.code === -32602)
+const toSettled = await rpc({
+  jsonrpc: '2.0', id: 22, method: 'SendMessage',
+  params: {
+    message: {
+      messageId: 'probe-settled', role: 'ROLE_USER',
+      parts: [{ text: 'continue a finished task' }], taskId: task.id,
+    },
+  },
+})
+check('message to a terminal task is -32004', toSettled.body.error?.code === -32004)
 
 // ── Streaming ────────────────────────────────────────────────────────────
-console.log('\nmessage/stream')
-const streamed = await stream(send(30, 'stream me', { method: 'message/stream' }))
+console.log('\nSendStreamingMessage')
+const streamed = await stream(send(30, 'stream me', { method: 'SendStreamingMessage' }))
 check('content-type is text/event-stream', streamed.contentType?.includes('text/event-stream'))
-check('opens with a non-final status', streamed.frames[0]?.result?.final === false)
-check('delivers an artifact update',
-  streamed.frames.some(frame => frame.result?.kind === 'artifact-update'))
-check('closes with exactly one final frame',
-  streamed.frames.filter(frame => frame.result?.final === true).length === 1)
-check('final frame is last', streamed.frames.at(-1)?.result?.final === true)
-const streamTaskId = streamed.frames[0]?.result?.taskId
+check('opens with the task object', streamed.frames[0]?.result?.task !== undefined)
+check('no final flag anywhere',
+  streamed.frames.every(frame => frame.result?.statusUpdate?.final === undefined))
+check('delivers a wrapped artifact update',
+  streamed.frames.some(frame => frame.result?.artifactUpdate !== undefined))
+const lastFrame = streamed.frames.at(-1)?.result
+check('closes on a terminal statusUpdate',
+  lastFrame?.statusUpdate !== undefined
+  && [
+    'TASK_STATE_COMPLETED', 'TASK_STATE_FAILED', 'TASK_STATE_CANCELED', 'TASK_STATE_REJECTED',
+  ].includes(lastFrame.statusUpdate.status?.state),
+  lastFrame?.statusUpdate?.status?.state)
+const streamTaskId = streamed.frames[0]?.result?.task?.id
 check('every frame correlates to the request id',
   streamed.frames.every(frame => frame.id === 30))
 
-// ── resubscribe ──────────────────────────────────────────────────────────
-console.log('\ntasks/resubscribe')
+// ── SubscribeToTask ──────────────────────────────────────────────────────
+console.log('\nSubscribeToTask')
 await new Promise(resolve => setTimeout(resolve, 300))
-const again = await stream({ jsonrpc: '2.0', id: 31, method: 'tasks/resubscribe', params: { taskId: streamTaskId } })
-check('settled task gets one terminal frame', again.frames.length === 1)
-check('and it is final', again.frames[0]?.result?.final === true)
-const noSuch = await rpc({ jsonrpc: '2.0', id: 32, method: 'tasks/resubscribe', params: { taskId: 'never-existed' } })
+const settledSubscribe = await rpc({
+  jsonrpc: '2.0', id: 31, method: 'SubscribeToTask', params: { id: streamTaskId },
+})
+check('terminal task is -32004', settledSubscribe.body.error?.code === -32004,
+  settledSubscribe.body.error?.message)
+const noSuch = await rpc({
+  jsonrpc: '2.0', id: 32, method: 'SubscribeToTask', params: { id: 'never-existed' },
+})
 check('unknown task is -32001', noSuch.body.error?.code === -32001)
 
-// ── Dialects ─────────────────────────────────────────────────────────────
-console.log('\nv1.0 dialect')
-const v1 = await rpc({
-  jsonrpc: '2.0', id: 40, method: 'SendMessage',
-  params: { message: { messageId: 'probe-v1', role: 'ROLE_USER', parts: [{ text: 'v1 dialect' }] } },
+// ── Version negotiation ──────────────────────────────────────────────────
+console.log('\nVersion negotiation')
+const noVersion = await fetch(rpcUrl, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+  body: JSON.stringify(send(40, 'no version header')),
 })
-check('v1.0 method name accepted', v1.body.error === undefined)
-check('renders the v1.0 state spelling',
-  String(v1.body.result?.status?.state).startsWith('TASK_STATE_'), v1.body.result?.status?.state)
-const versioned = await rpc(send(41, 'versioned'), { 'a2a-version': '1.0' })
-check('A2A-Version 1.0 accepted', versioned.body.error === undefined)
+check('absent header is served as 1.0', (await noVersion.json()).error === undefined)
+const oldVersion = await rpc(send(41, 'old'), { 'a2a-version': '0.3' })
+check('A2A-Version 0.3 is -32009', oldVersion.body.error?.code === -32009,
+  oldVersion.body.error?.message)
 const badVersion = await rpc(send(42, 'bad'), { 'a2a-version': '9.9' })
-check('unsupported A2A-Version is -32602', badVersion.body.error?.code === -32602)
+check('unsupported A2A-Version is -32009', badVersion.body.error?.code === -32009)
+check('and names the reason',
+  badVersion.body.error?.data?.[0]?.reason === 'VERSION_NOT_SUPPORTED')
+
+// ── Extended agent card ──────────────────────────────────────────────────
+console.log('\nGetExtendedAgentCard')
+const extended = await rpc({ jsonrpc: '2.0', id: 45, method: 'GetExtendedAgentCard' })
+if (card.capabilities?.extendedAgentCard === true) {
+  check('answers when the capability is advertised', extended.body.error === undefined,
+    extended.body.error?.message)
+  check('reveals at least as many skills as the public card',
+    (extended.body.result?.skills ?? []).length >= (card.skills ?? []).length,
+    `${extended.body.result?.skills?.length} vs ${card.skills?.length}`)
+} else {
+  check('unconfigured extended card is -32007', extended.body.error?.code === -32007)
+}
 
 // ── Content types ────────────────────────────────────────────────────────
 console.log('\nContent types')
@@ -235,49 +318,48 @@ console.log('\nContent types')
 // is what actually needs proving: that the part reached the request at all.
 // Asserting on the reply's FORMAT would only ever describe the stub.
 const withFile = await rpc({
-  jsonrpc: '2.0', id: 50, method: 'message/send',
+  jsonrpc: '2.0', id: 50, method: 'SendMessage',
   params: {
     message: {
-      kind: 'message', messageId: 'probe-file', role: 'user',
+      messageId: 'probe-file', role: 'ROLE_USER',
       parts: [
-        { kind: 'text', text: 'Reply with only the filename attached to this message. No other words.' },
-        { kind: 'file', file: { name: 'a.txt', mimeType: 'text/plain', uri: 'https://x/a.txt' } },
+        { text: 'Reply with only the filename attached to this message. No other words.' },
+        { url: 'https://x/a.txt', filename: 'a.txt', mediaType: 'text/plain' },
       ],
     },
   },
 })
 // In `immediate` mode the send response is non-terminal and carries no
 // artifacts yet, so the result must be read back rather than assumed.
-const fileText = await settledOutput(withFile.body.result)
+const fileText = await settledOutput(withFile.body.result?.task)
 check('file part reaches the model', fileText.includes('a.txt'), fileText.slice(0, 80))
 const withData = await rpc({
-  jsonrpc: '2.0', id: 51, method: 'message/send',
+  jsonrpc: '2.0', id: 51, method: 'SendMessage',
   params: {
     message: {
-      kind: 'message', messageId: 'probe-data', role: 'user',
+      messageId: 'probe-data', role: 'ROLE_USER',
       parts: [
-        { kind: 'text', text: 'Reply with only the value of n. Digits only.' },
-        { kind: 'data', data: { n: 42 } },
+        { text: 'Reply with only the value of n. Digits only.' },
+        { data: { n: 42 }, mediaType: 'application/json' },
       ],
     },
   },
 })
-const dataText = await settledOutput(withData.body.result)
+const dataText = await settledOutput(withData.body.result?.task)
 check('data part reaches the model', dataText.includes('42'), dataText.slice(0, 80))
-const flattened = await rpc({
-  jsonrpc: '2.0', id: 52, method: 'message/send',
-  params: { message: { messageId: 'probe-flat', role: 'ROLE_USER', parts: [{ text: 'flat part' }] } },
-})
-check('v1.0 member-presence text part parsed', flattened.body.error === undefined)
 
-// ── Deliberately unsupported ─────────────────────────────────────────────
-console.log('\nDeliberately unsupported')
-for (const method of ['tasks/list', 'ListTasks', 'agent/getAuthenticatedExtendedCard']) {
+// ── Retired v0.3 surface ─────────────────────────────────────────────────
+console.log('\nRetired v0.3 surface')
+for (const method of ['message/send', 'tasks/get', 'tasks/resubscribe']) {
   const answer = await rpc({ jsonrpc: '2.0', id: 60, method, params: {} })
   check(`${method} is -32601`, answer.body.error?.code === -32601)
+  check(`${method} names its replacement`,
+    /renamed it to [A-Z]/.test(answer.body.error?.message ?? ''), answer.body.error?.message)
 }
-for (const method of ['tasks/pushNotificationConfig/set', 'ListTaskPushNotificationConfigs']) {
-  const answer = await rpc({ jsonrpc: '2.0', id: 61, method, params: { taskId: 'x' } })
+for (const method of [
+  'CreateTaskPushNotificationConfig', 'ListTaskPushNotificationConfigs',
+]) {
+  const answer = await rpc({ jsonrpc: '2.0', id: 61, method, params: { id: 'x' } })
   check(`${method} is -32003`, answer.body.error?.code === -32003)
 }
 
@@ -287,8 +369,12 @@ const badJson = await fetch(rpcUrl, { method: 'POST', headers, body: '{not json'
 check('unparseable body is -32700', (await badJson.json()).error?.code === -32700)
 const emptyMessage = await rpc(send(70, '   '))
 check('whitespace-only message is -32602', emptyMessage.body.error?.code === -32602)
-const noMethod = await rpc({ jsonrpc: '2.0', id: 71, method: 'tasks/teleport', params: {} })
+const noMethod = await rpc({ jsonrpc: '2.0', id: 71, method: 'Teleport', params: {} })
 check('unknown method is -32601', noMethod.body.error?.code === -32601)
+const tenanted = await rpc({
+  jsonrpc: '2.0', id: 72, method: 'GetTask', params: { id: task.id, tenant: 'other' },
+})
+check('tenant this interface never declared is -32602', tenanted.body.error?.code === -32602)
 
 console.log(`\n${passed} ok, ${failed} failed\n`)
 process.exit(failed === 0 ? 0 : 1)

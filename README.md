@@ -15,14 +15,14 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm version"></a>
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC binding">
+  <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
-  <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 tests">
+  <img src="https://img.shields.io/badge/tests-160-2EA44F?style=flat" alt="160 tests">
 </p>
 
 `dsh-a2a-server` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 agent reachable over the [A2A (Agent2Agent)](https://a2a-protocol.org) protocol. It
-serves an Agent Card at a well-known URI and implements the **v0.3.0 JSON-RPC
+serves an Agent Card at a well-known URI and implements the **v1.0 JSON-RPC
 binding**, so any compliant peer that knows the deployment's URL can discover the
 agent and submit tasks to it.
 
@@ -50,7 +50,7 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 | `ctx.agents` | `dsh-base` |
 | `ctx.credentials` | `dsh-base` |
 | `ctx.webServer` | **`dsh-web-app`** |
-| `ctx.sessionProjections` (optional) | composition; enables `tasks/get` after settlement |
+| `ctx.sessionProjections` (optional) | composition; enables `GetTask` after settlement |
 
 The plugin stays PENDING until the three required services exist. `ctx.webServer`
 ships in `dsh-web-app` rather than `dsh-base`, so a `headless` profile needs
@@ -93,9 +93,9 @@ curl -s http://127.0.0.1:9922/.well-known/agent-card.json
 curl -s http://127.0.0.1:9922/a2a \
   -H "authorization: Bearer demo123" \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
-        "message":{"kind":"message","messageId":"m1","role":"user",
-                   "parts":[{"kind":"text","text":"hello"}]}}}'
+  -H 'a2a-version: 1.0'   -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+        "message":{"messageId":"m1","role":"ROLE_USER",
+                   "parts":[{"text":"hello"}]}}}'
 ```
 
 | Variable | Default | Meaning |
@@ -106,7 +106,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_WORKSPACE_ROOT` | temp dir | Parent of the per-peer working directories |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model id requested from the adapter |
 
-A one-shot probe runs 48 checks against a live server and exits non-zero on any
+A one-shot probe runs 67 checks against a live server and exits non-zero on any
 mismatch:
 
 ```sh
@@ -122,21 +122,42 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent.json` | GET | Public by default |
 | `{basePath}` (default `/a2a`) | POST | Bearer required |
 
-| JSON-RPC method | v1.0 alias | Status |
-| --- | --- | --- |
-| `message/send` | `SendMessage` | Blocking negotiated per request |
-| `message/stream` | `SendStreamingMessage` | SSE |
-| `tasks/get` | `GetTask` | Idempotent; answers after settlement |
-| `tasks/cancel` | `CancelTask` | Cancels the running turn |
-| `tasks/resubscribe` | `SubscribeToTask` | Live stream, or one terminal frame |
-| `tasks/pushNotificationConfig/*` | `*TaskPushNotificationConfig` | `-32003` |
-| `tasks/list` | `ListTasks` | `-32601` |
-| `agent/getAuthenticatedExtendedCard` | `GetExtendedAgentCard` | `-32601` |
+| JSON-RPC method | Status |
+| --- | --- |
+| `SendMessage` | Waiting negotiated per request |
+| `SendStreamingMessage` | SSE |
+| `GetTask` | Idempotent; answers after settlement |
+| `ListTasks` | Cursor-paginated, filterable, resident contexts only |
+| `CancelTask` | Cancels the running turn |
+| `SubscribeToTask` | Live stream; `-32004` on a terminal task |
+| `GetExtendedAgentCard` | Extra skills for an authenticated peer; `-32007` when unconfigured |
+| `*TaskPushNotificationConfig` | `-32003` |
 
-Both dialects are accepted. v0.3 (`message/send`, `"working"`, `kind`-tagged
-parts) is the mainline; the v1.0 spellings (`SendMessage`, `TASK_STATE_WORKING`,
-member-presence parts) are normalized inbound and rendered back in whichever
-dialect the request used.
+**Only A2A v1.0 is served.** The v0.3 method names, `kind` discriminators,
+lowercase enums, and nested `file` parts are gone rather than aliased: every
+reply this server writes is v1.0 JSON, which a v0.3 client could not read, so
+answering a v0.3 request would fail further from its cause than refusing it. A
+retired method answers `-32601` naming its replacement, and an explicit
+`A2A-Version: 0.3` answers `-32009` (`VersionNotSupportedError`). A request with
+no `A2A-Version` header is served as 1.0 — the only version this interface
+declares on its card.
+
+What that means concretely, against v0.3:
+
+| Concern | v0.3 | v1.0 as served here |
+| --- | --- | --- |
+| Task reference | `params.taskId` | `params.id` |
+| `SendMessage` result | bare `Task` | `{ "task": … }` |
+| Task state | `"working"` | `"TASK_STATE_WORKING"` |
+| Message role | `"user"` | `"ROLE_USER"` |
+| Part | `{"kind":"text","text":…}` | `{"text":…}`; file parts flatten to `url`/`raw`/`filename`/`mediaType` |
+| Stream frame | `{"kind":"status-update",…,"final":true}` | `{"statusUpdate":{…}}`; the stream's close is the terminal signal |
+| Stream opening | a non-final status update | the `Task` object itself |
+| Wait control | `configuration.blocking` | `configuration.returnImmediately` (inverted; blocking is the default) |
+| Card endpoint | `url` + `preferredTransport` | `supportedInterfaces[]`, each carrying its own `protocolVersion` |
+| Card auth | `securitySchemes` + `security` | schemes wrapped in `httpAuthSecurityScheme`; `securityRequirements` |
+| Extended card | `supportsAuthenticatedExtendedCard` | `capabilities.extendedAgentCard` |
+| A2A error detail | none | `error.data[]` carrying a `google.rpc.ErrorInfo` with `reason` and `domain` |
 
 Inbound messages may carry text, file, and data parts. File and data parts are
 rendered into the model's context as bracketed references. Replies are text.
@@ -153,7 +174,6 @@ another peer answers exactly as an absent one.
   config:
     basePath: /a2a
     publicUrl: https://agents.example.com/a2a   # advertised on the card
-    protocolVersion: 0.3.0
     provider: deepseek-official
     model: deepseek-v4-flash
 
@@ -166,6 +186,11 @@ another peer answers exactly as an absent one.
           name: general
           description: General-purpose task execution.
           tags: [coding, research]
+      extendedSkills:                             # authenticated peers only
+        - id: internal
+          name: internal diagnostics
+          description: Reports harness internals.
+          tags: [internal]
       provider:
         organization: Example Inc.
         url: https://example.com
@@ -196,15 +221,16 @@ another peer answers exactly as an absent one.
 | --- | --- | --- |
 | `basePath` | `/a2a` | JSON-RPC route |
 | `publicUrl` | derived from `Host` | Routable URL published on the card |
-| `protocolVersion` | `0.3.0` | Version advertised on the card |
 | `provider` · `model` | — | Model route for every agent this server creates |
 | `card.public` | `true` | Serve the card without a credential |
 | `card.skills` | `[]` | Declared skills; falls back to one `general` entry |
+| `card.extendedSkills` | `[]` | Skills revealed only through `GetExtendedAgentCard` |
+| `card.extendedSkills` | `[]` | Skills revealed only through `GetExtendedAgentCard` |
 | `peers` | `{}` | Identity → credential **reference name** |
 | `trustedPeers` | all authenticated | Allow-list of identities that may run tasks |
 | `rateLimitPerMinute` | `60` | Sliding window per identity |
 | `maxContextTurns` | `5` | Messages accepted per context before `rejected` |
-| `sendMode` | `block` | Default when the client states no preference |
+| `sendMode` | `block` | Default when the client sends no `returnImmediately` |
 | `blockTimeoutMs` | `60000` | After which a blocking request is declined |
 | `contextIdleTtlMs` | `1800000` | Idle time before a context's agent is released |
 | `maxResidentContexts` | `64` | Ceiling on resident contexts |
@@ -277,8 +303,8 @@ single repository; under it, files written by one peer are readable by another.
 ```
 src/
 ├── protocol/          dependency-free library: no Cordis, no HTTP, no harness
-│   ├── wire.ts        the A2A vocabulary, normalized to v0.3 spelling
-│   ├── normalize.ts   v0.3 <-> v1.0 dialect translation, both directions
+│   ├── wire.ts        the A2A v1.0 vocabulary: one shape, no translation
+│   ├── parse.ts       inbound parsing and the method table
 │   ├── jsonrpc.ts     framing and the A2A error codes
 │   ├── card.ts        Agent Card construction
 │   └── sse.ts         SSE frame encoding
@@ -312,7 +338,7 @@ pnpm install
 pnpm typecheck
 pnpm test       # 129 tests across 9 files
 pnpm serve      # a listening server
-pnpm probe      # 48 checks against a running server
+pnpm probe      # 67 checks against a running server
 pnpm build      # emit lib/
 ```
 
@@ -327,8 +353,8 @@ Built against [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deep
 The official project supplies the agent runtime, the plugin system, and the
 capability seams this plugin consumes. This project supplies:
 
-- The A2A v0.3.0 JSON-RPC binding, served inbound
-- Agent Card construction and dialect normalization
+- The A2A v1.0 JSON-RPC binding, served inbound
+- Agent Card construction and inbound request parsing
 - Mapping between A2A tasks and harness turns
 - Per-peer authentication, isolation, and workspace policy
 

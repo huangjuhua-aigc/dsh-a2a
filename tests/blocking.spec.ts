@@ -1,15 +1,16 @@
 /**
- * `configuration.blocking` — the client's say in whether `message/send` waits.
+ * `configuration.returnImmediately` — the client's say in whether `SendMessage`
+ * waits.
  *
- * A2A is async-first: the method MAY answer with a non-terminal task. Which it
- * does is negotiated, and the official SDK's own type says so:
+ * v1.0 inverted v0.3's `blocking`. Operations are BLOCKING by default:
  *
- *   blocking: bool | None
- *   "If true, the client will wait for the task to complete.
- *    The server may reject this if the task is long-running."
+ *   "If true, the operation returns immediately after creating the task, even
+ *    if processing is still in progress. If false (default), the operation MUST
+ *    wait until the task reaches a terminal ... or interrupted ... state."
  *
- * So the client proposes, the deployment supplies a default, and the server may
- * still decline by timing out — with the task left running rather than failed.
+ * So the client proposes, the deployment supplies a default for a client that
+ * says nothing, and the server may still decline a wait by timing out — with
+ * the task left running rather than failed.
  */
 
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -19,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { compose, type Composition } from '../example/compose.ts'
 
 const TOKEN = 'tok-alice-blocking'
+const RUNNING = ['TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING']
 let workspaceRoot: string
 let apps: Composition[] = []
 
@@ -35,11 +37,11 @@ async function serverWith(sendMode: 'block' | 'immediate'): Promise<Composition>
   return app
 }
 
-/** Send one message, optionally stating a blocking preference. */
+/** Send one message, optionally stating a return preference. */
 async function send(
   app: Composition,
   text: string,
-  blocking?: boolean,
+  returnImmediately?: boolean,
 ): Promise<Record<string, any>> {
   const response = await fetch(app.rpcUrl, {
     method: 'POST',
@@ -47,17 +49,14 @@ async function send(
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'message/send',
+      method: 'SendMessage',
       params: {
-        message: {
-          kind: 'message', messageId: 'm1', role: 'user',
-          parts: [{ kind: 'text', text }],
-        },
-        ...blocking === undefined ? {} : { configuration: { blocking } },
+        message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text }] },
+        ...returnImmediately === undefined ? {} : { configuration: { returnImmediately } },
       },
     }),
   })
-  return (await response.json() as Record<string, any>).result
+  return (await response.json() as Record<string, any>).result.task
 }
 
 beforeEach(async () => {
@@ -73,18 +72,18 @@ afterEach(async () => {
 })
 
 describe('the client states a preference', () => {
-  it('blocking:true waits even when the deployment defaults to immediate', async () => {
+  it('returnImmediately:false waits even when the deployment defaults to immediate', async () => {
     const app = await serverWith('immediate')
-    const task = await send(app, 'hi', true)
-    expect(task.status.state).toBe('completed')
+    const task = await send(app, 'hi', false)
+    expect(task.status.state).toBe('TASK_STATE_COMPLETED')
     expect(task.artifacts[0].parts[0].text).toContain('hi')
   })
 
-  it('blocking:false returns at once even when the deployment defaults to block', async () => {
+  it('returnImmediately:true returns at once even when the deployment defaults to block', async () => {
     const app = await serverWith('block')
     const release = app.adapter.hold()
-    const task = await send(app, 'hi', false)
-    expect(['submitted', 'working']).toContain(task.status.state)
+    const task = await send(app, 'hi', true)
+    expect(RUNNING).toContain(task.status.state)
     expect(task.artifacts).toEqual([])
     release()
   })
@@ -94,27 +93,26 @@ describe('the client states no preference', () => {
   it('follows a block deployment', async () => {
     const app = await serverWith('block')
     const task = await send(app, 'hi')
-    expect(task.status.state).toBe('completed')
+    expect(task.status.state).toBe('TASK_STATE_COMPLETED')
   })
 
   it('follows an immediate deployment', async () => {
     const app = await serverWith('immediate')
     const release = app.adapter.hold()
     const task = await send(app, 'hi')
-    expect(['submitted', 'working']).toContain(task.status.state)
+    expect(RUNNING).toContain(task.status.state)
     release()
   })
 })
 
 describe('the server may decline a blocking request', () => {
   it('hands back a non-terminal task on timeout, and keeps working', async () => {
-    // The spec's own words: "The server may reject this if the task is
-    // long-running." Declining means answering non-terminally, NOT failing —
-    // the task is alive and the peer polls for it.
+    // Declining a wait means answering non-terminally, NOT failing — the task
+    // is alive and the peer polls for it.
     const app = await serverWith('immediate')
     const release = app.adapter.hold()
-    const task = await send(app, 'slow', true)
-    expect(['submitted', 'working']).toContain(task.status.state)
+    const task = await send(app, 'slow', false)
+    expect(RUNNING).toContain(task.status.state)
 
     release()
     await new Promise(resolve => setTimeout(resolve, 500))
@@ -122,10 +120,10 @@ describe('the server may decline a blocking request', () => {
     const polled = await fetch(app.rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tasks/get', params: { taskId: task.id } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'GetTask', params: { id: task.id } }),
     })
     const settled = (await polled.json() as Record<string, any>).result
-    expect(settled.status.state).toBe('completed')
+    expect(settled.status.state).toBe('TASK_STATE_COMPLETED')
     expect(settled.artifacts[0].parts[0].text).toContain('slow')
   })
 })

@@ -3,10 +3,10 @@
  *
  * Without this, task state lives only in the process-local slot table, and
  * `settleSlot` removes a slot the moment it settles — so a peer that polls
- * `tasks/get` is told the task never existed, moments after it completed. That
+ * `GetTask` is told the task never existed, moments after it completed. That
  * breaks the polling path A2A treats as the baseline update mechanism
- * (`message/stream` and push notifications are both optional capabilities;
- * `tasks/get` is not).
+ * (`SendStreamingMessage` and push notifications are both optional
+ * capabilities; `GetTask` is not).
  *
  * The unit is a pure left fold over the `a2a/task` edges the server already
  * appends. It holds no subscriptions: the registry drives every committed event
@@ -59,8 +59,11 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 }
 
 const STATES = [
-  'submitted', 'working', 'input-required', 'auth-required',
-  'completed', 'canceled', 'failed', 'rejected',
+  'TASK_STATE_UNSPECIFIED',
+  'TASK_STATE_SUBMITTED', 'TASK_STATE_WORKING',
+  'TASK_STATE_INPUT_REQUIRED', 'TASK_STATE_AUTH_REQUIRED',
+  'TASK_STATE_COMPLETED', 'TASK_STATE_CANCELED',
+  'TASK_STATE_FAILED', 'TASK_STATE_REJECTED',
 ] as const
 
 /** Validates the wire payload before it leaves the host. */
@@ -99,7 +102,10 @@ interface TaskEdge {
 export const a2aTaskProjection = {
   key: 'a2aTask' as const,
   schema: A2A_TASK_VIEW_SCHEMA,
-  stateVersion: 1,
+  // Bumped for A2A v1.0: task states are persisted in their new ProtoJSON
+  // spelling, so a cache written under the v0.3 spelling must be discarded
+  // rather than folded onto.
+  stateVersion: 2,
 
   /**
    * State for the empty log.
@@ -156,4 +162,6 @@ export const a2aTaskProjection = {
   },
 }
 
-const TERMINAL = new Set<A2ATaskState>(['completed', 'canceled', 'failed', 'rejected'])
+const TERMINAL = new Set<A2ATaskState>([
+  'TASK_STATE_COMPLETED', 'TASK_STATE_CANCELED', 'TASK_STATE_FAILED', 'TASK_STATE_REJECTED',
+])

@@ -1,69 +1,94 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAgentCard,
+  buildExtendedAgentCard,
+  errorDetails,
   FALLBACK_SKILL,
   isTerminal,
+  legacyMethodReplacement,
+  parseListTasksParams,
   parsePart,
-  parseSendParams,
+  parseSendMessageRequest,
+  parseTenant,
   partsToText,
-  renderStatusUpdate,
-  renderTask,
   resolveMethod,
   sseFrame,
+  streamStatusUpdate,
+  streamTask,
 } from '../src/protocol/index.ts'
 import { A2AContextId, A2ATaskId } from '../src/protocol/brand.ts'
-import type { A2ATask, A2ATaskStatusUpdateEvent } from '../src/protocol/wire.ts'
+import type { A2ATask } from '../src/protocol/wire.ts'
 
 describe('method resolution', () => {
-  it('resolves the v0.3 mainline spellings', () => {
-    expect(resolveMethod('message/send')).toEqual({ operation: 'send', dialect: 'v0.3' })
-    expect(resolveMethod('tasks/get')).toEqual({ operation: 'get', dialect: 'v0.3' })
-    expect(resolveMethod('tasks/cancel')).toEqual({ operation: 'cancel', dialect: 'v0.3' })
+  it('resolves the v1.0 spellings', () => {
+    expect(resolveMethod('SendMessage')).toBe('send')
+    expect(resolveMethod('SendStreamingMessage')).toBe('stream')
+    expect(resolveMethod('GetTask')).toBe('get')
+    expect(resolveMethod('ListTasks')).toBe('list')
+    expect(resolveMethod('CancelTask')).toBe('cancel')
+    expect(resolveMethod('SubscribeToTask')).toBe('subscribe')
+    expect(resolveMethod('GetExtendedAgentCard')).toBe('extended_card')
   })
 
-  it('accepts the v1.0 spellings and reports their dialect', () => {
-    expect(resolveMethod('SendMessage')).toEqual({ operation: 'send', dialect: 'v1.0' })
-    expect(resolveMethod('GetTask')).toEqual({ operation: 'get', dialect: 'v1.0' })
-    expect(resolveMethod('CancelTask')).toEqual({ operation: 'cancel', dialect: 'v1.0' })
+  it('resolves each push-config method to its own operation', () => {
+    expect(resolveMethod('CreateTaskPushNotificationConfig')).toBe('push_create')
+    expect(resolveMethod('GetTaskPushNotificationConfig')).toBe('push_get')
+    expect(resolveMethod('ListTaskPushNotificationConfigs')).toBe('push_list')
+    expect(resolveMethod('DeleteTaskPushNotificationConfig')).toBe('push_delete')
   })
 
-  it('maps both push spellings onto one operation', () => {
-    expect(resolveMethod('tasks/pushNotificationConfig/set')?.operation).toBe('push_set')
-    expect(resolveMethod('CreateTaskPushNotificationConfig')?.operation).toBe('push_set')
-    // The pre-0.3 alias some peers still emit.
-    expect(resolveMethod('tasks/pushNotification/set')?.operation).toBe('push_set')
+  it('does not answer a retired v0.3 method', () => {
+    expect(resolveMethod('message/send')).toBeUndefined()
+    expect(resolveMethod('tasks/get')).toBeUndefined()
+    expect(resolveMethod('tasks/resubscribe')).toBeUndefined()
   })
 
-  it('returns undefined for an unknown method', () => {
-    expect(resolveMethod('tasks/teleport')).toBeUndefined()
+  it('names the v1.0 replacement for a retired method', () => {
+    expect(legacyMethodReplacement('message/send')).toBe('SendMessage')
+    expect(legacyMethodReplacement('tasks/resubscribe')).toBe('SubscribeToTask')
+    expect(legacyMethodReplacement('agent/getAuthenticatedExtendedCard'))
+      .toBe('GetExtendedAgentCard')
+  })
+
+  it('returns undefined for a method that was never ours', () => {
+    expect(resolveMethod('Teleport')).toBeUndefined()
+    expect(legacyMethodReplacement('Teleport')).toBeUndefined()
   })
 })
 
-describe('part parsing across dialects', () => {
-  it('reads a v0.3 kind-discriminated text part', () => {
-    expect(parsePart({ kind: 'text', text: 'hello' })).toEqual({ kind: 'text', text: 'hello' })
+describe('part parsing', () => {
+  it('reads a text part by member presence', () => {
+    expect(parsePart({ text: 'hello' })).toEqual({ text: 'hello' })
   })
 
-  it('reads a v1.0 member-presence text part', () => {
-    expect(parsePart({ text: 'hello' })).toEqual({ kind: 'text', text: 'hello' })
+  it('carries mediaType and metadata alongside any content member', () => {
+    expect(parsePart({ text: 'hello', mediaType: 'text/plain', metadata: { a: 1 } }))
+      .toEqual({ text: 'hello', mediaType: 'text/plain', metadata: { a: 1 } })
   })
 
-  it('reads a pre-0.3 type-discriminated part', () => {
-    expect(parsePart({ type: 'text', text: 'hello' })).toEqual({ kind: 'text', text: 'hello' })
-  })
-
-  it('reads a v0.3 nested file part', () => {
-    expect(parsePart({ kind: 'file', file: { name: 'a.txt', uri: 'https://x/a.txt' } }))
-      .toEqual({ kind: 'file', file: { name: 'a.txt', uri: 'https://x/a.txt' } })
-  })
-
-  it('reads a v1.0 flattened file part', () => {
+  it('reads a file part by url', () => {
     expect(parsePart({ url: 'https://x/a.txt', filename: 'a.txt', mediaType: 'text/plain' }))
-      .toEqual({ kind: 'file', file: { uri: 'https://x/a.txt', name: 'a.txt', mimeType: 'text/plain' } })
+      .toEqual({ url: 'https://x/a.txt', filename: 'a.txt', mediaType: 'text/plain' })
+  })
+
+  it('reads a file part by inline raw bytes', () => {
+    expect(parsePart({ raw: 'aGk=', filename: 'a.bin' }))
+      .toEqual({ raw: 'aGk=', filename: 'a.bin' })
   })
 
   it('reads a data part', () => {
-    expect(parsePart({ kind: 'data', data: { n: 1 } })).toEqual({ kind: 'data', data: { n: 1 } })
+    expect(parsePart({ data: { n: 1 } })).toEqual({ data: { n: 1 } })
+  })
+
+  it('rejects the retired v0.3 nested file spelling', () => {
+    expect(parsePart({ kind: 'file', file: { name: 'a.txt', uri: 'https://x/a.txt' } }))
+      .toBeUndefined()
+  })
+
+  it('reads a v0.3 text part only because its member name survived the rename', () => {
+    // `kind` is ignored, not honored: the part is usable purely because v1.0
+    // spells the text member the same way.
+    expect(parsePart({ kind: 'text', text: 'hello' })).toEqual({ text: 'hello' })
   })
 
   it('returns undefined for an unrecognizable part instead of throwing', () => {
@@ -75,119 +100,185 @@ describe('part parsing across dialects', () => {
 
 describe('parts to model-visible text', () => {
   it('joins text parts with newlines', () => {
-    expect(partsToText([{ kind: 'text', text: 'a' }, { kind: 'text', text: 'b' }])).toBe('a\nb')
+    expect(partsToText([{ text: 'a' }, { text: 'b' }])).toBe('a\nb')
   })
 
   it('renders non-text parts as bracketed references rather than dropping them', () => {
     const text = partsToText([
-      { kind: 'text', text: 'see' },
-      { kind: 'file', file: { name: 'a.txt', mimeType: 'text/plain' } },
-      { kind: 'data', data: { n: 1 } },
+      { text: 'see' },
+      { url: 'https://x/a.txt', filename: 'a.txt', mediaType: 'text/plain' },
+      { data: { n: 1 } },
     ])
-    expect(text).toBe('see\n[file name=a.txt type=text/plain]\n[data {"n":1}]')
+    expect(text).toBe('see\n[file name=a.txt mediaType=text/plain]\n[data {"n":1}]')
   })
 
   it('skips empty text parts', () => {
-    expect(partsToText([{ kind: 'text', text: '' }])).toBe('')
+    expect(partsToText([{ text: '' }])).toBe('')
   })
 })
 
-describe('send-params parsing', () => {
-  it('parses a v0.3 request', () => {
-    const parsed = parseSendParams({
+describe('SendMessageRequest parsing', () => {
+  it('parses a v1.0 request', () => {
+    const parsed = parseSendMessageRequest({
       message: {
-        kind: 'message',
         messageId: 'm1',
-        role: 'user',
-        parts: [{ kind: 'text', text: 'hi' }],
+        role: 'ROLE_USER',
+        parts: [{ text: 'hi' }],
         contextId: 'ctx-1',
       },
     })
-    expect(parsed?.message.role).toBe('user')
+    expect(parsed?.message.role).toBe('ROLE_USER')
     expect(parsed?.message.contextId).toBe('ctx-1')
     expect(partsToText(parsed!.message.parts)).toBe('hi')
   })
 
-  it('parses a v1.0 request with SCREAMING role and flattened parts', () => {
-    const parsed = parseSendParams({
-      message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }], contextId: 'ctx-1' },
-    })
-    expect(parsed?.message.role).toBe('user')
-    expect(partsToText(parsed!.message.parts)).toBe('hi')
+  it('reads the agent role in its v1.0 spelling only', () => {
+    expect(parseSendMessageRequest({
+      message: { messageId: 'm1', role: 'ROLE_AGENT', parts: [] },
+    })?.message.role).toBe('ROLE_AGENT')
+    // The v0.3 spelling is not a role this server recognizes.
+    expect(parseSendMessageRequest({
+      message: { messageId: 'm1', role: 'agent', parts: [] },
+    })?.message.role).toBe('ROLE_USER')
   })
 
-  it('prefers the message contextId over a legacy top-level one', () => {
-    const parsed = parseSendParams({
+  it('ignores a top-level contextId, which v1.0 does not define', () => {
+    const parsed = parseSendMessageRequest({
       contextId: 'legacy',
-      message: { messageId: 'm1', role: 'user', parts: [{ text: 'hi' }], contextId: 'inner' },
+      message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }] },
     })
-    expect(parsed?.message.contextId).toBe('inner')
+    expect(parsed?.message.contextId).toBeUndefined()
   })
 
-  it('still accepts a legacy top-level contextId when the message omits one', () => {
-    const parsed = parseSendParams({
-      contextId: 'legacy',
-      message: { messageId: 'm1', role: 'user', parts: [{ text: 'hi' }] },
+  it('reads the task a message continues', () => {
+    const parsed = parseSendMessageRequest({
+      message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }], taskId: 't-1' },
     })
-    expect(parsed?.message.contextId).toBe('legacy')
+    expect(parsed?.message.taskId).toBe('t-1')
+  })
+
+  it('carries the configuration through untouched', () => {
+    const parsed = parseSendMessageRequest({
+      message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ text: 'hi' }] },
+      configuration: { returnImmediately: true, historyLength: 3 },
+    })
+    expect(parsed?.configuration?.returnImmediately).toBe(true)
+    expect(parsed?.configuration?.historyLength).toBe(3)
   })
 
   it('rejects params without a message object', () => {
-    expect(parseSendParams({})).toBeUndefined()
-    expect(parseSendParams(null)).toBeUndefined()
+    expect(parseSendMessageRequest({})).toBeUndefined()
+    expect(parseSendMessageRequest(null)).toBeUndefined()
   })
 
   it('yields an empty parts list when every part is unrecognizable', () => {
-    const parsed = parseSendParams({
-      message: { messageId: 'm1', role: 'user', parts: [{ kind: 'hologram' }] },
+    const parsed = parseSendMessageRequest({
+      message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ kind: 'hologram' }] },
     })
     expect(parsed?.message.parts).toEqual([])
   })
 })
 
+describe('ListTasks parameter parsing', () => {
+  it('accepts an absent params object as "no filters"', () => {
+    expect(parseListTasksParams(undefined)).toEqual({})
+  })
+
+  it('reads every documented filter', () => {
+    expect(parseListTasksParams({
+      contextId: 'c1',
+      status: 'TASK_STATE_WORKING',
+      pageSize: 10,
+      pageToken: 'tok',
+      statusTimestampAfter: '2026-08-17T00:00:00.000Z',
+      includeArtifacts: true,
+    })).toEqual({
+      contextId: 'c1',
+      status: 'TASK_STATE_WORKING',
+      pageSize: 10,
+      pageToken: 'tok',
+      statusTimestampAfter: '2026-08-17T00:00:00.000Z',
+      includeArtifacts: true,
+    })
+  })
+
+  it('clamps pageSize into the spec window rather than refusing the call', () => {
+    expect(parseListTasksParams({ pageSize: 500 }).pageSize).toBe(100)
+    expect(parseListTasksParams({ pageSize: 0 }).pageSize).toBe(1)
+  })
+
+  it('drops a status that is not a TaskState', () => {
+    expect(parseListTasksParams({ status: 'working' }).status).toBeUndefined()
+  })
+})
+
+describe('tenant routing', () => {
+  it('reports a tenant a peer named', () => {
+    expect(parseTenant({ tenant: 'blue' })).toBe('blue')
+  })
+
+  it('reports nothing when correctly omitted', () => {
+    expect(parseTenant({})).toBeUndefined()
+    expect(parseTenant({ tenant: '' })).toBeUndefined()
+  })
+})
+
 describe('terminal states', () => {
   it('classifies each state', () => {
-    expect(isTerminal('completed')).toBe(true)
-    expect(isTerminal('canceled')).toBe(true)
-    expect(isTerminal('failed')).toBe(true)
-    expect(isTerminal('rejected')).toBe(true)
-    expect(isTerminal('working')).toBe(false)
-    expect(isTerminal('submitted')).toBe(false)
+    expect(isTerminal('TASK_STATE_COMPLETED')).toBe(true)
+    expect(isTerminal('TASK_STATE_CANCELED')).toBe(true)
+    expect(isTerminal('TASK_STATE_FAILED')).toBe(true)
+    expect(isTerminal('TASK_STATE_REJECTED')).toBe(true)
+    expect(isTerminal('TASK_STATE_WORKING')).toBe(false)
+    expect(isTerminal('TASK_STATE_SUBMITTED')).toBe(false)
     // Interrupted, not finished: the peer may still supply what is missing.
-    expect(isTerminal('input-required')).toBe(false)
-    expect(isTerminal('auth-required')).toBe(false)
+    expect(isTerminal('TASK_STATE_INPUT_REQUIRED')).toBe(false)
+    expect(isTerminal('TASK_STATE_AUTH_REQUIRED')).toBe(false)
   })
 })
 
 const task: A2ATask = {
-  kind: 'task',
   id: A2ATaskId('t1'),
   contextId: A2AContextId('c1'),
-  status: { state: 'completed', timestamp: '2026-08-17T00:00:00.000Z' },
-  artifacts: [{ artifactId: 'a1', parts: [{ kind: 'text', text: 'done' }] }],
+  status: { state: 'TASK_STATE_COMPLETED', timestamp: '2026-08-17T00:00:00.000Z' },
+  artifacts: [{ artifactId: 'a1', parts: [{ text: 'done' }] }],
 }
 
-describe('dialect rendering', () => {
-  it('passes a v0.3 task through unchanged', () => {
-    expect(renderTask(task, 'v0.3')).toBe(task)
+describe('stream response wrapping', () => {
+  it('carries no kind discriminator on the task itself', () => {
+    expect(task).not.toHaveProperty('kind')
   })
 
-  it('rewrites task state into the v1.0 enum spelling', () => {
-    const rendered = renderTask(task, 'v1.0') as { status: { state: string } }
-    expect(rendered.status.state).toBe('TASK_STATE_COMPLETED')
+  it('identifies an opening frame by its task member', () => {
+    expect(streamTask(task)).toEqual({ task })
   })
 
-  it('wraps a v1.0 status update in a StreamResponse member', () => {
-    const event: A2ATaskStatusUpdateEvent = {
-      kind: 'status-update',
+  it('identifies a transition by its statusUpdate member, with no final flag', () => {
+    const wrapped = streamStatusUpdate({
       taskId: A2ATaskId('t1'),
       contextId: A2AContextId('c1'),
-      status: { state: 'working', timestamp: '2026-08-17T00:00:00.000Z' },
-      final: false,
-    }
-    expect(renderStatusUpdate(event, 'v0.3')).toBe(event)
-    const v1 = renderStatusUpdate(event, 'v1.0') as { statusUpdate: { status: { state: string } } }
-    expect(v1.statusUpdate.status.state).toBe('TASK_STATE_WORKING')
+      status: { state: 'TASK_STATE_WORKING', timestamp: '2026-08-17T00:00:00.000Z' },
+    })
+    expect(wrapped).toEqual({
+      statusUpdate: {
+        taskId: 't1',
+        contextId: 'c1',
+        status: { state: 'TASK_STATE_WORKING', timestamp: '2026-08-17T00:00:00.000Z' },
+      },
+    })
+    expect((wrapped as unknown as { statusUpdate: Record<string, unknown> }).statusUpdate)
+      .not.toHaveProperty('final')
+  })
+})
+
+describe('error details', () => {
+  it('names the reason and domain a client branches on', () => {
+    expect(errorDetails('TASK_NOT_FOUND', { taskId: 't1' })).toEqual([{
+      '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+      reason: 'TASK_NOT_FOUND',
+      domain: 'a2a-protocol.org',
+      metadata: { taskId: 't1' },
+    }])
   })
 })
 
@@ -197,53 +288,95 @@ describe('agent card', () => {
     description: 'test agent',
     version: '0.1.0',
     url: 'https://agents.example.com/a2a',
-    protocolVersion: '0.3.0',
     skills: [],
     streaming: true,
     pushNotifications: false,
     authRequired: true,
   }
 
-  it('emits both interface spellings so either dialect can find the endpoint', () => {
+  it('declares its endpoint through supportedInterfaces', () => {
     const card = buildAgentCard(input)
-    expect(card.url).toBe(input.url)
-    expect(card.preferredTransport).toBe('JSONRPC')
     expect(card.supportedInterfaces).toEqual([
-      { url: input.url, protocolBinding: 'JSONRPC', protocolVersion: '0.3.0' },
+      { url: input.url, protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
     ])
+  })
+
+  it('carries none of the members v1.0 removed', () => {
+    const card = buildAgentCard(input) as unknown as Record<string, unknown>
+    expect(card['protocolVersion']).toBeUndefined()
+    expect(card['url']).toBeUndefined()
+    expect(card['preferredTransport']).toBeUndefined()
+    expect(card['additionalInterfaces']).toBeUndefined()
+    expect(card['supportsAuthenticatedExtendedCard']).toBeUndefined()
+    expect(card['security']).toBeUndefined()
   })
 
   it('falls back to one general skill rather than advertising none', () => {
     expect(buildAgentCard(input).skills).toEqual([FALLBACK_SKILL])
   })
 
-  it('declares the bearer scheme when the endpoint requires a credential', () => {
+  it('declares the bearer scheme in its v1.0 wrapper', () => {
     const card = buildAgentCard(input)
-    expect(card.securitySchemes).toEqual({ bearer: { type: 'http', scheme: 'bearer' } })
-    expect(card.security).toEqual([{ bearer: [] }])
+    expect(card.securitySchemes).toEqual({
+      bearer: { httpAuthSecurityScheme: { scheme: 'Bearer' } },
+    })
+    expect(card.securityRequirements).toEqual([{ schemes: { bearer: { list: [] } } }])
   })
 
   it('omits the security block when no credential is required', () => {
     const card = buildAgentCard({ ...input, authRequired: false })
     expect(card.securitySchemes).toBeUndefined()
-    expect(card.security).toBeUndefined()
+    expect(card.securityRequirements).toBeUndefined()
   })
 
   it('never advertises capabilities it does not serve', () => {
     const card = buildAgentCard(input)
-    expect(card.capabilities.stateTransitionHistory).toBe(false)
     expect(card.capabilities.pushNotifications).toBe(false)
+    expect(card.capabilities.extendedAgentCard).toBe(false)
+  })
+})
+
+describe('extended agent card', () => {
+  const input = {
+    name: 'dsh-harness',
+    description: 'test agent',
+    version: '0.1.0',
+    url: 'https://agents.example.com/a2a',
+    skills: [{ id: 'public', name: 'public', description: '', tags: [] }],
+    streaming: true,
+    pushNotifications: false,
+    authRequired: true,
+  }
+
+  it('does not exist when no extended skills are declared', () => {
+    expect(buildExtendedAgentCard(input)).toBeUndefined()
+    expect(buildAgentCard(input).capabilities.extendedAgentCard).toBe(false)
+  })
+
+  it('appends the withheld skills once declared', () => {
+    const withExtended = {
+      ...input,
+      extendedSkills: [{ id: 'private', name: 'private', description: '', tags: [] }],
+    }
+    expect(buildAgentCard(withExtended).skills.map(s => s.id)).toEqual(['public'])
+    expect(buildAgentCard(withExtended).capabilities.extendedAgentCard).toBe(true)
+    expect(buildExtendedAgentCard(withExtended)?.skills.map(s => s.id))
+      .toEqual(['public', 'private'])
   })
 })
 
 describe('sse framing', () => {
   it('wraps the payload in a JSON-RPC envelope and terminates the frame', () => {
-    const frame = sseFrame(7, { kind: 'task' })
-    expect(frame).toBe('data: {"jsonrpc":"2.0","id":7,"result":{"kind":"task"}}\n\n')
+    const frame = sseFrame(7, streamTask(task))
+    expect(frame.startsWith('data: {"jsonrpc":"2.0","id":7,"result":{"task":')).toBe(true)
+    expect(frame.endsWith('\n\n')).toBe(true)
   })
 
   it('emits no raw newline that would truncate the frame', () => {
-    const frame = sseFrame(1, { text: 'a\nb' })
+    const frame = sseFrame(1, streamTask({
+      ...task,
+      artifacts: [{ artifactId: 'a1', parts: [{ text: 'a\nb' }] }],
+    }))
     expect(frame.split('\n\n')).toHaveLength(2)
     expect(frame).toContain('a\\nb')
   })

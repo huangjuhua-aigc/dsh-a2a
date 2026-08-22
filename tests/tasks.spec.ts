@@ -5,9 +5,9 @@ import { A2ATaskId } from '../src/protocol/brand.ts'
 describe('task slots', () => {
   it('settles exactly once', async () => {
     const slot = createSlot(A2ATaskId('t1'), 'm1')
-    slot.settle({ state: 'completed', artifacts: [] })
-    slot.settle({ state: 'failed', artifacts: [] })
-    await expect(slot.settled).resolves.toEqual({ state: 'completed', artifacts: [] })
+    slot.settle({ state: 'TASK_STATE_COMPLETED', artifacts: [] })
+    slot.settle({ state: 'TASK_STATE_FAILED', artifacts: [] })
+    await expect(slot.settled).resolves.toEqual({ state: 'TASK_STATE_COMPLETED', artifacts: [] })
     expect(slot.done).toBe(true)
   })
 
@@ -23,27 +23,27 @@ describe('turn ending to task state', () => {
   it('treats a turnless slot as cancelled', () => {
     // Admission discarded the message (agent/pre-step rejected it): no turn ran,
     // so nothing was worked and the peer must not be told it completed.
-    expect(stateFromEnding(undefined)).toBe('canceled')
+    expect(stateFromEnding(undefined)).toBe('TASK_STATE_CANCELED')
   })
 
   it('fails only on a model error', () => {
-    expect(stateFromEnding('error')).toBe('failed')
+    expect(stateFromEnding('error')).toBe('TASK_STATE_FAILED')
   })
 
   it('reports cancellation', () => {
-    expect(stateFromEnding('cancelled')).toBe('canceled')
-    expect(stateFromEnding('canceled')).toBe('canceled')
+    expect(stateFromEnding('cancelled')).toBe('TASK_STATE_CANCELED')
+    expect(stateFromEnding('canceled')).toBe('TASK_STATE_CANCELED')
   })
 
   it('completes on an ordinary ending', () => {
-    expect(stateFromEnding('end-turn')).toBe('completed')
-    expect(stateFromEnding('stop')).toBe('completed')
+    expect(stateFromEnding('end-turn')).toBe('TASK_STATE_COMPLETED')
+    expect(stateFromEnding('stop')).toBe('TASK_STATE_COMPLETED')
   })
 
   it('completes on a token ceiling rather than failing', () => {
     // The agent produced real work and stopped for its own reasons; `failed`
     // would tell the peer to discard it. The true ending rides in metadata.
-    expect(stateFromEnding('max-tokens')).toBe('completed')
+    expect(stateFromEnding('max-tokens')).toBe('TASK_STATE_COMPLETED')
   })
 })
 
@@ -52,7 +52,7 @@ describe('artifacts', () => {
     expect(artifactsFromTexts(A2ATaskId('t1'), ['hello', 'world'])).toEqual([{
       artifactId: 't1-result',
       name: 'result',
-      parts: [{ kind: 'text', text: 'hello\nworld' }],
+      parts: [{ text: 'hello\nworld', mediaType: 'text/plain' }],
     }])
   })
 

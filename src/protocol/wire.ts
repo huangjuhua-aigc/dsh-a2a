@@ -1,33 +1,57 @@
 /**
- * A2A wire vocabulary, normalized to the v0.3.0 spelling.
+ * The A2A v1.0 wire vocabulary.
  *
- * The server speaks one internal shape. Requests in either dialect are parsed
- * into these types on the way in ({@link ./normalize.ts}), and responses are
- * rendered back into the caller's dialect on the way out. No plugin module
- * outside `protocol/` sees a v1.0 spelling.
+ * There is exactly ONE shape in this server. v1.0 removed the `kind`
+ * discriminator, renamed every enum to its ProtoJSON spelling, and flattened
+ * `Part` into a single unified message — so the JSON these types describe is
+ * the JSON that goes on the wire, with no translation layer between them.
+ * That is the whole reason the v0.3 dialect machinery is gone: it existed only
+ * to bridge two spellings, and this server now speaks one.
  *
  * @module dsh-a2a/protocol/wire
  */
 
 import type { A2AContextId, A2ATaskId } from './brand.ts'
 
-/** Task lifecycle state, in the v0.3 JSON spelling. */
+/**
+ * The single A2A protocol version this server implements.
+ *
+ * Major.Minor only: the spec states patch numbers do not affect compatibility
+ * and SHOULD NOT appear in requests, responses, or Agent Cards.
+ */
+export const A2A_PROTOCOL_VERSION = '1.0'
+
+/** Task lifecycle state, in the ProtoJSON enum spelling v1.0 requires. */
 export type A2ATaskState =
-  | 'submitted'
-  | 'working'
-  | 'input-required'
-  | 'auth-required'
-  | 'completed'
-  | 'canceled'
-  | 'failed'
-  | 'rejected'
+  | 'TASK_STATE_UNSPECIFIED'
+  | 'TASK_STATE_SUBMITTED'
+  | 'TASK_STATE_WORKING'
+  | 'TASK_STATE_INPUT_REQUIRED'
+  | 'TASK_STATE_AUTH_REQUIRED'
+  | 'TASK_STATE_COMPLETED'
+  | 'TASK_STATE_CANCELED'
+  | 'TASK_STATE_FAILED'
+  | 'TASK_STATE_REJECTED'
+
+/** Every state a peer may name, e.g. as the `ListTasks` status filter. */
+export const TASK_STATES: readonly A2ATaskState[] = [
+  'TASK_STATE_UNSPECIFIED',
+  'TASK_STATE_SUBMITTED',
+  'TASK_STATE_WORKING',
+  'TASK_STATE_INPUT_REQUIRED',
+  'TASK_STATE_AUTH_REQUIRED',
+  'TASK_STATE_COMPLETED',
+  'TASK_STATE_CANCELED',
+  'TASK_STATE_FAILED',
+  'TASK_STATE_REJECTED',
+]
 
 /** States after which a task accepts no further transition. */
 export const TERMINAL_STATES: ReadonlySet<A2ATaskState> = new Set<A2ATaskState>([
-  'completed',
-  'canceled',
-  'failed',
-  'rejected',
+  'TASK_STATE_COMPLETED',
+  'TASK_STATE_CANCELED',
+  'TASK_STATE_FAILED',
+  'TASK_STATE_REJECTED',
 ])
 
 /**
@@ -39,42 +63,51 @@ export function isTerminal(state: A2ATaskState): boolean {
   return TERMINAL_STATES.has(state)
 }
 
-/** Message author, in the v0.3 JSON spelling. */
-export type A2ARole = 'user' | 'agent'
+/** Message author, in the ProtoJSON enum spelling. */
+export type A2ARole = 'ROLE_USER' | 'ROLE_AGENT'
 
-/** Which spelling a peer used; every response echoes the request's dialect. */
-export type A2ADialect = 'v0.3' | 'v1.0'
-
-/** A text segment of a message or artifact. */
+/**
+ * A text segment of a message or artifact.
+ *
+ * v1.0 unified the three part types into one message whose content member IS
+ * the discriminator, so these three interfaces narrow on member presence
+ * (`'text' in part`) rather than on a `kind` tag that no longer exists.
+ */
 export interface A2ATextPart {
-  kind: 'text'
   text: string
+  mediaType?: string
+  metadata?: Record<string, unknown>
 }
 
-/** A file reference or inline payload. */
+/** A file reference (`url`) or inline base64 payload (`raw`). */
 export interface A2AFilePart {
-  kind: 'file'
-  file: { name?: string; mimeType?: string; uri?: string; bytes?: string }
+  url?: string
+  raw?: string
+  filename?: string
+  mediaType?: string
+  metadata?: Record<string, unknown>
 }
 
 /** Structured JSON carried beside the text. */
 export interface A2ADataPart {
-  kind: 'data'
   data: unknown
+  mediaType?: string
+  metadata?: Record<string, unknown>
 }
 
-/** Any message or artifact segment. */
+/** Any message or artifact segment. Exactly one content member is set. */
 export type A2APart = A2ATextPart | A2AFilePart | A2ADataPart
 
 /** One message in a task's history. */
 export interface A2AMessage {
-  kind: 'message'
   messageId: string
   role: A2ARole
   parts: A2APart[]
   taskId?: A2ATaskId
   contextId?: A2AContextId
   metadata?: Record<string, unknown>
+  extensions?: string[]
+  referenceTaskIds?: string[]
 }
 
 /** A named output the agent produced for a task. */
@@ -84,6 +117,7 @@ export interface A2AArtifact {
   description?: string
   parts: A2APart[]
   metadata?: Record<string, unknown>
+  extensions?: string[]
 }
 
 /** Current state plus the message that explains it. */
@@ -95,7 +129,6 @@ export interface A2ATaskStatus {
 
 /** The unit of work a peer submits and polls. */
 export interface A2ATask {
-  kind: 'task'
   id: A2ATaskId
   contextId: A2AContextId
   status: A2ATaskStatus
@@ -104,33 +137,73 @@ export interface A2ATask {
   metadata?: Record<string, unknown>
 }
 
-/** A streamed state transition. `final` closes the stream. */
+/**
+ * A streamed state transition.
+ *
+ * v1.0 removed the `final` flag: the stream's own closure is what tells a peer
+ * the task reached a terminal state, so a server that keeps a stream open after
+ * a terminal status is the bug, not a missing boolean.
+ */
 export interface A2ATaskStatusUpdateEvent {
-  kind: 'status-update'
   taskId: A2ATaskId
   contextId: A2AContextId
   status: A2ATaskStatus
-  final: boolean
   metadata?: Record<string, unknown>
 }
 
 /** A streamed artifact, optionally appended to an earlier chunk. */
 export interface A2ATaskArtifactUpdateEvent {
-  kind: 'artifact-update'
   taskId: A2ATaskId
   contextId: A2AContextId
   artifact: A2AArtifact
+  /** Position of this artifact in the task's `artifacts` array. */
+  index?: number
   append?: boolean
   lastChunk?: boolean
   metadata?: Record<string, unknown>
 }
 
-/** Anything the server may push over an SSE stream. */
-export type A2AStreamEvent =
-  | A2ATask
-  | A2AMessage
-  | A2ATaskStatusUpdateEvent
-  | A2ATaskArtifactUpdateEvent
+/**
+ * One frame of a stream, wrapped so the member name identifies the event type.
+ *
+ * Exactly one member is set. This replaces v0.3's `kind` tag, and it is why
+ * the router never writes a bare event onto a stream.
+ */
+export type A2AStreamResponse =
+  | { task: A2ATask }
+  | { message: A2AMessage }
+  | { statusUpdate: A2ATaskStatusUpdateEvent }
+  | { artifactUpdate: A2ATaskArtifactUpdateEvent }
+
+/**
+ * Wrap a task as the opening frame of a stream.
+ * @param task - the task the stream follows.
+ * @returns the StreamResponse to serialize.
+ */
+export function streamTask(task: A2ATask): A2AStreamResponse {
+  return { task }
+}
+
+/**
+ * Wrap a status transition as a stream frame.
+ * @param event - the transition.
+ * @returns the StreamResponse to serialize.
+ */
+export function streamStatusUpdate(event: A2ATaskStatusUpdateEvent): A2AStreamResponse {
+  return { statusUpdate: event }
+}
+
+/**
+ * Wrap an artifact as a stream frame.
+ * @param event - the artifact event.
+ * @returns the StreamResponse to serialize.
+ */
+export function streamArtifactUpdate(event: A2ATaskArtifactUpdateEvent): A2AStreamResponse {
+  return { artifactUpdate: event }
+}
+
+/** The result of `SendMessage`: a task to track, or a direct reply. */
+export type A2ASendMessageResponse = { task: A2ATask } | { message: A2AMessage }
 
 /** Webhook registration a peer supplies for terminal-state callbacks. */
 export interface A2APushNotificationConfig {
@@ -140,19 +213,52 @@ export interface A2APushNotificationConfig {
   authentication?: { schemes: string[]; credentials?: string }
 }
 
-/** Per-request knobs carried beside the message on `message/send`. */
-export interface A2AMessageSendConfiguration {
-  acceptedOutputModes?: string[]
-  historyLength?: number
+/** A push configuration bound to a task. Flattened in v1.0. */
+export interface A2ATaskPushNotificationConfig {
+  taskId?: string
+  id?: string
   pushNotificationConfig?: A2APushNotificationConfig
-  blocking?: boolean
 }
 
-/** Parameters of `message/send` and `message/stream`. */
-export interface A2AMessageSendParams {
+/** Per-request knobs carried beside the message on `SendMessage`. */
+export interface A2ASendMessageConfiguration {
+  acceptedOutputModes?: string[]
+  historyLength?: number
+  taskPushNotificationConfig?: A2ATaskPushNotificationConfig
+  /**
+   * Whether to answer before the task settles.
+   *
+   * v1.0 inverted v0.3's `blocking`: operations are BLOCKING by default, and a
+   * client opts out. Unset therefore means "wait", not "return now".
+   */
+  returnImmediately?: boolean
+}
+
+/** Parameters of `SendMessage` and `SendStreamingMessage`. */
+export interface A2ASendMessageRequest {
   message: A2AMessage
-  configuration?: A2AMessageSendConfiguration
+  configuration?: A2ASendMessageConfiguration
   metadata?: Record<string, unknown>
+}
+
+/** Parameters of `ListTasks`. */
+export interface A2AListTasksParams {
+  contextId?: string
+  status?: A2ATaskState
+  pageSize?: number
+  pageToken?: string
+  historyLength?: number
+  statusTimestampAfter?: string
+  includeArtifacts?: boolean
+}
+
+/** The result of `ListTasks`. Cursor-paginated, newest first. */
+export interface A2AListTasksResult {
+  tasks: A2ATask[]
+  /** Empty string, never absent, when this is the last page. */
+  nextPageToken: string
+  pageSize: number
+  totalSize: number
 }
 
 /** One capability this agent advertises on its card. */
@@ -166,24 +272,48 @@ export interface A2AAgentSkill {
   outputModes?: string[]
 }
 
+/**
+ * One transport this agent answers on.
+ *
+ * v1.0 folded `url`, `preferredTransport`, `additionalInterfaces`, and the
+ * card-level `protocolVersion` into this one repeated field: a version is a
+ * property of an interface, not of an agent.
+ */
+export interface A2AAgentInterface {
+  url: string
+  protocolBinding: string
+  protocolVersion: string
+  tenant?: string
+}
+
+/** Which schemes a caller must satisfy, and with which scopes. */
+export interface A2ASecurityRequirement {
+  schemes: Record<string, { list: string[] }>
+}
+
+/** Optional features a peer may rely on. */
+export interface A2AAgentCapabilities {
+  streaming?: boolean
+  pushNotifications?: boolean
+  extensions?: { uri: string; description?: string; required?: boolean }[]
+  /** v1.0 home of what v0.3 spelled `supportsAuthenticatedExtendedCard`. */
+  extendedAgentCard?: boolean
+}
+
 /** The public description a peer fetches before talking to us. */
 export interface A2AAgentCard {
-  protocolVersion: string
   name: string
   description: string
-  version: string
-  url: string
-  preferredTransport: string
-  supportedInterfaces?: { url: string; protocolBinding: string; protocolVersion: string }[]
+  /** Ordered; the first entry is the preferred interface. Required in v1.0. */
+  supportedInterfaces: A2AAgentInterface[]
   provider?: { organization: string; url: string }
-  capabilities: {
-    streaming: boolean
-    pushNotifications: boolean
-    stateTransitionHistory: boolean
-  }
+  version: string
+  documentationUrl?: string
+  capabilities: A2AAgentCapabilities
+  securitySchemes?: Record<string, unknown>
+  securityRequirements?: A2ASecurityRequirement[]
   defaultInputModes: string[]
   defaultOutputModes: string[]
   skills: A2AAgentSkill[]
-  securitySchemes?: Record<string, unknown>
-  security?: Record<string, string[]>[]
+  iconUrl?: string
 }

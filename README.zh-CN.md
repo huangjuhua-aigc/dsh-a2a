@@ -15,14 +15,14 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm 版本"></a>
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/A2A-v0.3.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v0.3.0 JSON-RPC 绑定">
+  <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC 绑定">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
-  <img src="https://img.shields.io/badge/tests-129-2EA44F?style=flat" alt="129 项测试">
+  <img src="https://img.shields.io/badge/tests-160-2EA44F?style=flat" alt="160 项测试">
 </p>
 
 `dsh-a2a-server` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 上的 agent 可以通过 [A2A（Agent2Agent）](https://a2a-protocol.org)协议被访问。它在
-well-known 路径发布 Agent Card，并实现 **v0.3.0 JSON-RPC 绑定**——任何知道本部署
+well-known 路径发布 Agent Card，并实现 **v1.0 JSON-RPC 绑定**——任何知道本部署
 URL 的合规 peer 都能发现这个 agent 并向它提交任务。
 
 本插件**只做入站**：从不主动连接其他 agent，没有 client、没有 peer 目录、没有 A2A
@@ -48,7 +48,7 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 | `ctx.agents` | `dsh-base` |
 | `ctx.credentials` | `dsh-base` |
 | `ctx.webServer` | **`dsh-web-app`** |
-| `ctx.sessionProjections`（可选） | 组合层；启用后 `tasks/get` 在任务结算后仍可应答 |
+| `ctx.sessionProjections`（可选） | 组合层；启用后 `GetTask` 在任务结算后仍可应答 |
 
 三个必需服务齐备之前，插件保持 PENDING。`ctx.webServer` 由 `dsh-web-app` 提供而不在
 `dsh-base` 中，因此 `headless` profile 需要先挂载 `@deepseek-ai/dsh-host-webserver`。
@@ -88,9 +88,10 @@ curl -s http://127.0.0.1:9922/.well-known/agent-card.json
 curl -s http://127.0.0.1:9922/a2a \
   -H "authorization: Bearer demo123" \
   -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{
-        "message":{"kind":"message","messageId":"m1","role":"user",
-                   "parts":[{"kind":"text","text":"hello"}]}}}'
+  -H 'a2a-version: 1.0' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+        "message":{"messageId":"m1","role":"ROLE_USER",
+                   "parts":[{"text":"hello"}]}}}'
 ```
 
 | 变量 | 默认值 | 含义 |
@@ -101,7 +102,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_WORKSPACE_ROOT` | 临时目录 | per-peer 工作目录的父目录 |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 向适配器请求的模型 id |
 
-一次性探针会对运行中的服务执行 48 项检查，任何一项不符即以非零码退出：
+一次性探针会对运行中的服务执行 67 项检查，任何一项不符即以非零码退出：
 
 ```sh
 pnpm probe                                        # 默认 :9922 / demo123
@@ -116,20 +117,40 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent.json` | GET | 默认公开 |
 | `{basePath}`（默认 `/a2a`） | POST | 必须携带 Bearer |
 
-| JSON-RPC 方法 | v1.0 别名 | 状态 |
-| --- | --- | --- |
-| `message/send` | `SendMessage` | 是否阻塞逐请求协商 |
-| `message/stream` | `SendStreamingMessage` | SSE |
-| `tasks/get` | `GetTask` | 幂等；结算后仍可应答 |
-| `tasks/cancel` | `CancelTask` | 取消正在执行的 turn |
-| `tasks/resubscribe` | `SubscribeToTask` | 续订活任务，或给一帧终态 |
-| `tasks/pushNotificationConfig/*` | `*TaskPushNotificationConfig` | `-32003` |
-| `tasks/list` | `ListTasks` | `-32601` |
-| `agent/getAuthenticatedExtendedCard` | `GetExtendedAgentCard` | `-32601` |
+| JSON-RPC 方法 | 状态 |
+| --- | --- |
+| `SendMessage` | 是否等待逐请求协商 |
+| `SendStreamingMessage` | SSE |
+| `GetTask` | 幂等；结算后仍可应答 |
+| `ListTasks` | 游标分页、可过滤；仅覆盖常驻的 context |
+| `CancelTask` | 取消正在执行的 turn |
+| `SubscribeToTask` | 续订活任务；终态任务返回 `-32004` |
+| `GetExtendedAgentCard` | 已认证 peer 可见的额外 skill；未配置时 `-32007` |
+| `*TaskPushNotificationConfig` | `-32003` |
 
-两种方言都接受。v0.3（`message/send`、`"working"`、带 `kind` 的 part）是主线；v1.0
-拼写（`SendMessage`、`TASK_STATE_WORKING`、成员存在式 part）在入站时被归一化，并按请求
-所用的方言渲染回去。
+**只提供 A2A v1.0。** v0.3 的方法名、`kind` 判别字段、小写枚举、嵌套 `file`
+part 是被**删除**而不是做了别名：本服务写出的每一个回包都是 v1.0 JSON，v0.3
+客户端本就读不懂，所以“应答一个 v0.3 请求”只会让故障离成因更远。已退役的方法回
+`-32601` 并直接告知新名字；显式的 `A2A-Version: 0.3` 回 `-32009`
+（`VersionNotSupportedError`）。不带 `A2A-Version` 头的请求按 1.0 处理——这是本接口
+在 Card 上声明的唯一版本。
+
+具体到线上，与 v0.3 的差异：
+
+| 关注点 | v0.3 | 本服务的 v1.0 |
+| --- | --- | --- |
+| 任务引用 | `params.taskId` | `params.id` |
+| `SendMessage` 结果 | 裸 `Task` | `{ "task": … }` |
+| 任务状态 | `"working"` | `"TASK_STATE_WORKING"` |
+| 消息角色 | `"user"` | `"ROLE_USER"` |
+| Part | `{"kind":"text","text":…}` | `{"text":…}`；文件 part 展平为 `url`/`raw`/`filename`/`mediaType` |
+| 流帧 | `{"kind":"status-update",…,"final":true}` | `{"statusUpdate":{…}}`；流关闭即终态信号 |
+| 流首帧 | 一帧非终态 status update | `Task` 对象本身 |
+| 等待控制 | `configuration.blocking` | `configuration.returnImmediately`（语义反转，默认等待） |
+| Card 端点 | `url` + `preferredTransport` | `supportedInterfaces[]`，每条自带 `protocolVersion` |
+| Card 鉴权 | `securitySchemes` + `security` | scheme 包在 `httpAuthSecurityScheme` 里；改用 `securityRequirements` |
+| 扩展 Card | `supportsAuthenticatedExtendedCard` | `capabilities.extendedAgentCard` |
+| A2A 错误细节 | 无 | `error.data[]` 携带 `google.rpc.ErrorInfo`，含 `reason` 与 `domain` |
 
 入站消息可携带 text、file、data 三类 part。file 与 data 会以方括号引用的形式进入模型
 上下文。回复为纯文本。
@@ -145,7 +166,6 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
   config:
     basePath: /a2a
     publicUrl: https://agents.example.com/a2a   # 写入 Card 的对外地址
-    protocolVersion: 0.3.0
     provider: deepseek-official
     model: deepseek-v4-flash
 
@@ -188,7 +208,6 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | --- | --- | --- |
 | `basePath` | `/a2a` | JSON-RPC 路由 |
 | `publicUrl` | 由 `Host` 推导 | 写入 Card 的可路由地址 |
-| `protocolVersion` | `0.3.0` | Card 上声明的协议版本 |
 | `provider` · `model` | — | 本服务创建的每个 agent 使用的模型路由 |
 | `card.public` | `true` | 无需凭据即可获取 Card |
 | `card.skills` | `[]` | 声明的 skills；为空时回退到一条 `general` |
@@ -262,8 +281,8 @@ A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 ```
 src/
 ├── protocol/          零依赖库：不碰 Cordis、不碰 HTTP、不碰 harness
-│   ├── wire.ts        A2A 词汇表，统一归一到 v0.3 拼写
-│   ├── normalize.ts   v0.3 <-> v1.0 方言双向翻译
+│   ├── wire.ts        A2A v1.0 词汇表：只有一种形状，不需要翻译
+│   ├── parse.ts       入站解析与方法表
 │   ├── jsonrpc.ts     信封框架与 A2A 错误码
 │   ├── card.ts        Agent Card 构造
 │   └── sse.ts         SSE 帧编码
@@ -295,7 +314,7 @@ pnpm install
 pnpm typecheck
 pnpm test       # 9 个文件共 129 项测试
 pnpm serve      # 启动监听服务
-pnpm probe      # 对运行中的服务执行 48 项检查
+pnpm probe      # 对运行中的服务执行 67 项检查
 pnpm build      # 产出 lib/
 ```
 
@@ -308,8 +327,8 @@ pnpm build      # 产出 lib/
 
 官方项目提供 agent 运行时、插件系统，以及本插件所消费的各个能力接缝。本项目提供：
 
-- 入站的 A2A v0.3.0 JSON-RPC 绑定
-- Agent Card 构造与方言归一化
+- 入站的 A2A v1.0 JSON-RPC 绑定
+- Agent Card 构造与入站请求解析
 - A2A task 与 harness turn 之间的映射
 - 按 peer 的认证、隔离与工作目录策略
 
