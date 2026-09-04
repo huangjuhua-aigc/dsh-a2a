@@ -17,7 +17,7 @@
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
-  <img src="https://img.shields.io/badge/tests-166-2EA44F?style=flat" alt="166 tests">
+  <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 tests">
 </p>
 
 `dsh-a2a-server` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -225,7 +225,6 @@ another peer answers exactly as an absent one.
 | `card.public` | `true` | Serve the card without a credential |
 | `card.skills` | `[]` | Declared skills; falls back to one `general` entry |
 | `card.extendedSkills` | `[]` | Skills revealed only through `GetExtendedAgentCard` |
-| `card.extendedSkills` | `[]` | Skills revealed only through `GetExtendedAgentCard` |
 | `peers` | `{}` | Identity → credential **reference name** |
 | `trustedPeers` | all authenticated | Allow-list of identities that may run tasks |
 | `rateLimitPerMinute` | `60` | Sliding window per identity |
@@ -283,8 +282,7 @@ single repository; under it, files written by one peer are readable by another.
 - JSONRPC binding only. gRPC and HTTP+JSON are not served, and the card says so.
 - Push notifications are not implemented. `push.enabled` selects which error the
   push methods return; the card advertises `pushNotifications: false`.
-- No extended Agent Card, `stateTransitionHistory`, protocol extensions, or card
-  signatures.
+- No `stateTransitionHistory`, protocol extensions, or card signatures.
 - Streaming emits committed assistant messages. Per-chunk streaming is not
   implemented.
 - No orphan-task watchdog: a task wedged non-terminal stays that way.
@@ -336,7 +334,7 @@ maps to an Activation evicted when idle, leaving the durable Session behind.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test       # 129 tests across 9 files
+pnpm test       # 167 tests across 10 files
 pnpm serve      # a listening server
 pnpm probe      # 67 checks against a running server
 pnpm build      # emit lib/
