@@ -17,7 +17,7 @@
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC 绑定">
   <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
-  <img src="https://img.shields.io/badge/tests-166-2EA44F?style=flat" alt="166 项测试">
+  <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 项测试">
 </p>
 
 `dsh-a2a-server` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -211,6 +211,7 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 | `provider` · `model` | — | 本服务创建的每个 agent 使用的模型路由 |
 | `card.public` | `true` | 无需凭据即可获取 Card |
 | `card.skills` | `[]` | 声明的 skills；为空时回退到一条 `general` |
+| `card.extendedSkills` | `[]` | 只对已认证 peer 经 `GetExtendedAgentCard` 公开的 skills |
 | `peers` | `{}` | 身份 → 凭据**引用名** |
 | `trustedPeers` | 全部已认证身份 | 允许执行任务的身份白名单 |
 | `rateLimitPerMinute` | `60` | 按身份的滑动窗口 |
@@ -265,7 +266,7 @@ A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 - 只提供 JSONRPC 绑定。不提供 gRPC 与 HTTP+JSON，Card 上如实声明。
 - 未实现推送通知。`push.enabled` 仅决定推送方法返回哪个错误码，Card 上声明
   `pushNotifications: false`。
-- 不支持扩展 Agent Card、`stateTransitionHistory`、协议扩展与 Card 签名。
+- 不支持 `stateTransitionHistory`、协议扩展与 Card 签名。
 - 流式只推送已提交的 assistant 消息，未实现逐 chunk 推送。
 - 无孤儿任务看门狗：卡在非终态的任务会一直保持该状态。
 - 未实现跨会话工具拒绝；隔离依赖 `workspaceMode`。
@@ -312,7 +313,7 @@ src/
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test       # 9 个文件共 129 项测试
+pnpm test       # 10 个文件共 167 项测试
 pnpm serve      # 启动监听服务
 pnpm probe      # 对运行中的服务执行 67 项检查
 pnpm build      # 产出 lib/

@@ -38,6 +38,7 @@ import {
   type CardInput,
 } from './protocol/index.ts'
 import { assertConfigCoherent, Config, type A2AServerConfig } from './config.ts'
+import { SERVER_VERSION } from './version.ts'
 import { ContextRegistry, type Activation } from './contexts.ts'
 import { identifyPeer, RateLimiter, TurnTracker, type PeerIdentity } from './security.ts'
 import { artifactsFromTexts, createSlot, stateFromEnding, type TaskSlot } from './tasks.ts'
@@ -197,7 +198,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   const cardInput = (hostHeader: string | undefined): CardInput => ({
     name: config.card.name,
     description: config.card.description,
-    version: '0.1.0',
+    version: SERVER_VERSION,
     url: publicUrl(hostHeader),
     skills: config.card.skills,
     extendedSkills: config.card.extendedSkills,

@@ -1,6 +1,6 @@
 {
   "name": "dsh-a2a-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inbound A2A (Agent2Agent) protocol server for DeepSeek Harness: publish an Agent Card and let any A2A-compliant peer submit tasks to a harness agent",
   "keywords": [
     "dsh",

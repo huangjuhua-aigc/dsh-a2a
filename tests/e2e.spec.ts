@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { compose, type Composition } from '../example/compose.ts'
+import { SERVER_VERSION } from '../src/version.ts'
 
 const ALICE_TOKEN = 'tok-alice-e2e'
 const BOB_TOKEN = 'tok-bob-e2e'
@@ -98,6 +99,7 @@ describe('agent card discovery', () => {
     expect(card.supportedInterfaces[0].protocolBinding).toBe('JSONRPC')
     expect(card.supportedInterfaces[0].protocolVersion).toBe('1.0')
     expect(card.supportedInterfaces[0].url).toContain('/a2a')
+    expect(card.version).toBe(SERVER_VERSION)
   })
 
   it('carries none of the card members v1.0 removed', async () => {
