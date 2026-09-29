@@ -56,6 +56,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     /** Per-session A2A task states, folded from `a2a/task` edges. */
     a2aTask: A2ATaskProjection
   }
+  interface SessionProjectionStateMap {
+    /** Host fold state for the A2A task projection. */
+    a2aTask: A2ATaskState_
+  }
 }
 
 const STATES = [
@@ -101,7 +105,7 @@ interface TaskEdge {
  */
 export const a2aTaskProjection = {
   key: 'a2aTask' as const,
-  schema: A2A_TASK_VIEW_SCHEMA,
+  stateSchema: A2A_TASK_VIEW_SCHEMA,
   // Bumped for A2A v1.0: task states are persisted in their new ProtoJSON
   // spelling, so a cache written under the v0.3 spelling must be discarded
   // rather than folded onto.
@@ -153,12 +157,18 @@ export const a2aTaskProjection = {
   },
 
   /**
-   * State → wire payload.
+   * State → wire payload, in the nested `wire` block the current
+   * `@deepseek-ai/dsh-session-projection` registry requires: its
+   * `snapshot()` skips any unit whose `wire` is undefined, which used to
+   * make `GetTask` / `ListTasks` go blind the moment a task settled.
    * @param state - the current state.
    * @returns the whole current value.
    */
-  view(state: A2ATaskState_): A2ATaskProjection {
-    return { tasks: state.tasks }
+  wire: {
+    viewSchema: A2A_TASK_VIEW_SCHEMA,
+    view(state: A2ATaskState_): A2ATaskProjection {
+      return { tasks: state.tasks }
+    },
   },
 }
 
