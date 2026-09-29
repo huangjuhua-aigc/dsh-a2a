@@ -392,7 +392,11 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   const projections = ctx.get('sessionProjections')
   if (projections !== undefined) {
     ctx.effect(
-      () => projections.register(a2aTaskProjection),
+      // The projection definition targets the CURRENT registry shape
+      // (stateSchema + nested wire block); the rc.6 typings this package
+      // compiles against still describe the old flat shape, so bridge with a
+      // cast. Runtime DSH versions matching the old shape are unsupported.
+      () => projections.register(a2aTaskProjection as never),
       'a2a.projection',
     )
   } else {

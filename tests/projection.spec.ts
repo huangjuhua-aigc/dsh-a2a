@@ -112,11 +112,11 @@ describe('the view', () => {
     let state = a2aTaskProjection.init()
     state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { stopReason: 'stop' }))
     state = a2aTaskProjection.apply(state, edge('t2', 'TASK_STATE_WORKING'))
-    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.view(state))).not.toThrow()
+    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.wire.view(state))).not.toThrow()
   })
 
   it('produces a schema-valid payload for an empty log', () => {
-    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.view(a2aTaskProjection.init())))
+    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.wire.view(a2aTaskProjection.init())))
       .not.toThrow()
   })
 
