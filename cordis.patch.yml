@@ -25,6 +25,8 @@
           # cross-session tooling separate peers for free. A deployment whose
           # peers collaborate on one repository must say so explicitly.
           workspaceMode: per-peer
-          workspaceRoot: !!js `${process.env.DSH_HOME ?? process.env.HOME}/a2a-workspaces`
+          # Literal default: the DSH overlay parser cannot resolve !!js tags.
+          # Override per profile via cordis.yml or a later patch layer.
+          workspaceRoot: /tmp/a2a-workspaces
         push:
           enabled: false
