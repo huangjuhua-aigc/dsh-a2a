@@ -305,8 +305,20 @@ export function createRouter(deps: RouterDeps): Router {
   ): Promise<Activation> => {
     if (rawContextId === undefined) return deps.createActivation(peer)
     const found = deps.contexts.lookup(A2AContextId(rawContextId), peer)
-    if (found === 'unknown' || found === 'forbidden') {
-      throw new A2ARpcError(ERR_INVALID_PARAMS, `unknown contextId: ${rawContextId}`)
+    if (found === 'unknown') {
+      // The registry is process-local: a restart, idle eviction, or a
+      // workspace relocation forgets every context. A peer that reuses a
+      // contextId (exactly what A2A conversation continuity encourages)
+      // would otherwise hit a hard error it cannot recover from — it has no
+      // way to know the server forgot. Fall back to a fresh context, which
+      // is what the peer would have gotten by omitting contextId anyway.
+      return deps.createActivation(peer)
+    }
+    if (found === 'forbidden') {
+      // Owned by another peer: report exactly as absent (anti-enumeration),
+      // but DO create a fresh context rather than hard-failing — the peer
+      // cannot tell the difference and the outcome is the same useful one.
+      return deps.createActivation(peer)
     }
     return found
   }
