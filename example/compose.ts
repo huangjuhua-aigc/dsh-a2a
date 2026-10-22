@@ -17,8 +17,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
-import SessionProjections from '@deepseek-ai/dsh-session-projection'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmDeepSeekApiKey from '@deepseek-ai/dsh-llm-deepseek-api-key'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as A2AServer from '../src/index.ts'
 import { EchoAdapter, ECHO_MODEL, ECHO_PROVIDER } from './echo-adapter.ts'
@@ -59,6 +58,10 @@ export interface ComposeOptions {
   blockTimeoutMs?: number
   /** Share one workspace across peers instead of isolating them. */
   workspaceMode?: 'per-peer' | 'shared'
+  /** Files injected as the host briefing when a context opens; default `.hop/handoff.md` relative to each peer workspace. */
+  preambleFiles?: string[]
+  /** Credential reference for the loopback admin token; omit to leave the monitoring surface unmounted. */
+  adminTokenEnv?: string
   /**
    * Use the deterministic stub instead of a real model.
    *
@@ -91,7 +94,7 @@ const DEEPSEEK_MODEL = process.env['DEEPSEEK_MODEL'] ?? 'deepseek-v4-flash'
  */
 export async function compose(options: ComposeOptions): Promise<Composition> {
   const ctx = new Context()
-  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: '' } })
+  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { personaPrefix: '' } })
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new EchoAdapter()
   ctx.llm.registerAdapter([ECHO_PROVIDER], adapter)
@@ -109,7 +112,7 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   // and `describe()` answers "is this configured" without ever holding a value.
   const useReal = options.forceStub !== true
   if (useReal) {
-    await ctx.plugin(LlmDeepSeek, {})
+    await ctx.plugin(LlmDeepSeekApiKey, {})
     const info = await ctx.credentials.describe(credentialRef(DEEPSEEK_API_KEY_REF))
     if (!info.configured) {
       await ctx.fiber.dispose()
@@ -120,8 +123,9 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
     ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
     : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
   // The durable task read model: without it, GetTask cannot answer once a
-  // task settles, and a polling peer never learns its result.
-  await ctx.plugin(SessionProjections)
+  // task settles, and a polling peer never learns its result. The 0.2
+  // testkit mounts the projection registry as a loop prerequisite, so it is
+  // already active by this point.
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: options.port ?? 0 })
 
   const config: A2AServerConfig = {
@@ -162,11 +166,17 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
       workspaceRoot: options.workspaceRoot,
       peerWorkspaces: {},
     },
+    preamble: { files: options.preambleFiles ?? ['.hop/handoff.md'] },
+    ...options.adminTokenEnv === undefined ? {} : { admin: { tokenEnv: options.adminTokenEnv } },
     push: { enabled: false },
   }
   await ctx.plugin(A2AServer, config)
 
   const port = ctx.webServer.port
+  if (port === undefined) {
+    await ctx.fiber.dispose()
+    throw new Error('the web server did not bind a port')
+  }
   const origin = `http://127.0.0.1:${port}`
   return {
     ctx,

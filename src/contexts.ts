@@ -27,6 +27,12 @@ export interface Activation {
   readonly cwd: string
   /** In-flight tasks, keyed by task id. FIFO order comes from the agent inbox. */
   readonly slots: Map<A2ATaskId, TaskSlot>
+  /**
+   * The host briefing read at activation, merged into this context's FIRST
+   * visitor message and then cleared — a one-shot, so `undefined` means both
+   * "nothing was configured" and "already delivered".
+   */
+  preambleText?: string | undefined
   /** Last time a request touched this context, for idle eviction. */
   lastTouchedAt: number
 }

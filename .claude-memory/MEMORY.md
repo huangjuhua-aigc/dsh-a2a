@@ -1,0 +1,2 @@
+- [Upstream lone-surrogate defect](upstream-lone-surrogate-defect.md) — non-ASCII replies arrive corrupted from DSH's streaming decoder; the guard in security.ts is temporary, and the bug is intermittent so "it looks fine" proves nothing
+- [Demo server process quirk](dsh-a2a-server-process-quirk.md) — pkill leaves the port bound, so a failed restart silently measures the old build

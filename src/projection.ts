@@ -42,6 +42,17 @@ export interface A2ATaskView {
    * `exactOptionalPropertyTypes`.
    */
   stopReason?: string | undefined
+  /**
+   * The visitor's submitted text, when a non-terminal edge recorded it.
+   *
+   * Monitoring reads this to show what a visitor said; the A2A wire task does
+   * not carry it (a peer already knows what it sent).
+   *
+   * Explicitly `| undefined` because the value round-trips through a zod schema
+   * whose inferred optional includes it, and this project compiles with
+   * `exactOptionalPropertyTypes`.
+   */
+  input?: string | undefined
   /** Wall-clock of the last recorded edge, for `Task.status.timestamp`. */
   updatedAt: string
 }
@@ -52,6 +63,10 @@ export interface A2ATaskProjection {
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Per-session A2A task fold state (plain JSON, per the cache precondition). */
+    a2aTask: A2ATaskState_
+  }
   interface SessionProjectionMap {
     /** Per-session A2A task states, folded from `a2a/task` edges. */
     a2aTask: A2ATaskProjection
@@ -66,12 +81,13 @@ const STATES = [
   'TASK_STATE_FAILED', 'TASK_STATE_REJECTED',
 ] as const
 
-/** Validates the wire payload before it leaves the host. */
+/** Validates the unit's state and wire payload — both are the same shape here. */
 export const A2A_TASK_VIEW_SCHEMA = z.object({
   tasks: z.record(z.string(), z.object({
     taskId: z.string(),
     peer: z.string(),
     state: z.enum(STATES),
+    input: z.string().optional(),
     output: z.string().optional(),
     stopReason: z.string().optional(),
     updatedAt: z.string(),
@@ -89,6 +105,7 @@ interface TaskEdge {
   peer: string
   state: A2ATaskState
   turn?: number
+  input?: string
   stopReason?: string
   output?: string
 }
@@ -98,14 +115,17 @@ interface TaskEdge {
  *
  * Declared as a plain object rather than built inside `apply()` so the fold can
  * be unit-tested without a Cordis context or a session.
+ *
+ * This unit's state and view are the same shape, so one schema serves both the
+ * persisted-state check (`stateSchema`) and the wire check (`wire.viewSchema`).
  */
 export const a2aTaskProjection = {
   key: 'a2aTask' as const,
-  schema: A2A_TASK_VIEW_SCHEMA,
-  // Bumped for A2A v1.0: task states are persisted in their new ProtoJSON
-  // spelling, so a cache written under the v0.3 spelling must be discarded
-  // rather than folded onto.
-  stateVersion: 2,
+  stateSchema: A2A_TASK_VIEW_SCHEMA,
+  // v2 folded A2A v1.0 state spellings; v3 adds the visitor's submitted text
+  // (`input`) to the state shape, so a v2 cache must be discarded rather than
+  // folded onto.
+  stateVersion: 3,
 
   /**
    * State for the empty log.
@@ -134,6 +154,10 @@ export const a2aTaskProjection = {
     // Terminal states are final: a late edge must not reopen a settled task.
     if (previous !== undefined && TERMINAL.has(previous.state)) return state
 
+    // A terminal edge carries the answer, not the question: the input recorded
+    // by the submitted edge carries forward so a settled row stays complete.
+    const input = data.input ?? previous?.input
+
     return {
       tasks: {
         ...state.tasks,
@@ -141,6 +165,7 @@ export const a2aTaskProjection = {
           taskId: data.taskId,
           peer: data.peer,
           state: data.state,
+          ...input === undefined ? {} : { input },
           ...data.output === undefined ? {} : { output: data.output },
           ...data.stopReason === undefined ? {} : { stopReason: data.stopReason },
           // The log has no wall-clock of its own, so the fold stamps when it
@@ -157,8 +182,11 @@ export const a2aTaskProjection = {
    * @param state - the current state.
    * @returns the whole current value.
    */
-  view(state: A2ATaskState_): A2ATaskProjection {
-    return { tasks: state.tasks }
+  wire: {
+    viewSchema: A2A_TASK_VIEW_SCHEMA,
+    view(state: A2ATaskState_): A2ATaskProjection {
+      return { tasks: state.tasks }
+    },
   },
 }
 

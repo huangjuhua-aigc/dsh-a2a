@@ -15,7 +15,7 @@ import type { A2ATaskState } from '../src/protocol/index.ts'
 function edge(
   taskId: string,
   state: A2ATaskState,
-  extra: { peer?: string; stopReason?: string; output?: string } = {},
+  extra: { peer?: string; input?: string; stopReason?: string; output?: string } = {},
 ): SessionEvent {
   return {
     type: 'a2a/task',
@@ -23,6 +23,7 @@ function edge(
       taskId,
       peer: extra.peer ?? 'alice',
       state,
+      ...extra.input === undefined ? {} : { input: extra.input },
       ...extra.stopReason === undefined ? {} : { stopReason: extra.stopReason },
       ...extra.output === undefined ? {} : { output: extra.output },
     },
@@ -80,6 +81,15 @@ describe('folding task lifecycle', () => {
     expect(state.tasks['t1']?.output).toBe('the answer is 42')
   })
 
+  it('carries the visitor input recorded on the submitted edge', () => {
+    // Monitoring reads the fold to show what a visitor SAID; the wire task
+    // never carries it, so the fold is the only durable home for it.
+    let state = a2aTaskProjection.init()
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_SUBMITTED', { input: '帮我看下升级进展' }))
+    state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { output: 'echo: 帮我看下升级进展' }))
+    expect(state.tasks['t1']?.input).toBe('帮我看下升级进展')
+  })
+
   it('keeps tasks independent within one session', () => {
     let state = a2aTaskProjection.init()
     state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED'))
@@ -112,11 +122,11 @@ describe('the view', () => {
     let state = a2aTaskProjection.init()
     state = a2aTaskProjection.apply(state, edge('t1', 'TASK_STATE_COMPLETED', { stopReason: 'stop' }))
     state = a2aTaskProjection.apply(state, edge('t2', 'TASK_STATE_WORKING'))
-    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.view(state))).not.toThrow()
+    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.wire.view(state))).not.toThrow()
   })
 
   it('produces a schema-valid payload for an empty log', () => {
-    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.view(a2aTaskProjection.init())))
+    expect(() => A2A_TASK_VIEW_SCHEMA.parse(a2aTaskProjection.wire.view(a2aTaskProjection.init())))
       .not.toThrow()
   })
 

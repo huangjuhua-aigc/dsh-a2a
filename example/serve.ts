@@ -81,6 +81,11 @@ const workspaceRoot = process.env['A2A_WORKSPACE_ROOT']
 // task and must come back with GetTask for the result.
 const sendMode = process.env['A2A_SEND_MODE'] === 'immediate' ? 'immediate' : 'block'
 
+// Setting A2A_ADMIN_TOKEN mounts the loopback-only monitoring surface.
+const adminTokenEnv = (process.env['A2A_ADMIN_TOKEN'] ?? '').length > 0
+  ? 'A2A_ADMIN_TOKEN'
+  : undefined
+
 // Two failures are common enough to be worth explaining rather than dumping:
 // a port left bound by an earlier run, and no model credential configured.
 const app = await compose({
@@ -88,6 +93,7 @@ const app = await compose({
   workspaceRoot,
   peers,
   sendMode,
+  adminTokenEnv,
 }).catch((error: unknown) => {
   if (error instanceof MissingModelCredentialError) {
     console.error(`No credential configured for ${error.ref}.\n`)
@@ -126,7 +132,7 @@ dsh-a2a listening on ${origin}
   Workspaces   ${workspaceRoot}/<peer>
   Peers        ${Object.keys(peers).join(', ')}
   sendMode     ${sendMode}
-  model        ${app.model.provider}/${app.model.id}
+  model        ${app.model.provider}/${app.model.id}${adminTokenEnv === undefined ? '' : `\n  Admin       ${origin}/a2a/admin/contexts  (loopback, Bearer <A2A_ADMIN_TOKEN>)`}
 
 Try it:
 

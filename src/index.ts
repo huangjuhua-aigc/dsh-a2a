@@ -19,7 +19,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, access } from 'node:fs/promises'
+import { mkdir, access, readFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -42,7 +42,7 @@ import { SERVER_VERSION } from './version.ts'
 import { ContextRegistry, type Activation } from './contexts.ts'
 import { identifyPeer, RateLimiter, TurnTracker, type PeerIdentity } from './security.ts'
 import { artifactsFromTexts, createSlot, stateFromEnding, type TaskSlot } from './tasks.ts'
-import { createRouter, type RouterDeps } from './router.ts'
+import { createRouter, type AdminSnapshot, type RouterDeps } from './router.ts'
 import { a2aTaskProjection } from './projection.ts'
 // Side-effect type imports: these declaration-merge `ctx.webServer` and
 // `ctx.credentials` onto Context, and our own `a2a/task` / `a2a-peer` vocabulary
@@ -71,7 +71,7 @@ export const inject = ['agents', 'webServer', 'credentials']
  * An absent service means nothing continuable was ever materialized.
  */
 interface ContinuableDrain {
-  drainContinuableDescendants(parents: readonly Agent[]): Promise<void>
+  drainDescendants(parents: readonly Agent[]): Promise<void>
 }
 
 /**
@@ -170,6 +170,28 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   }
 
   /**
+   * Read the host briefing files for one workspace, best effort.
+   *
+   * An absent file is the normal "nothing to hand over" case, not an error:
+   * most contexts open with no briefing waiting for them.
+   */
+  const readPreamble = async (cwd: string): Promise<string | undefined> => {
+    const parts: string[] = []
+    for (const file of config.preamble.files) {
+      const path = isAbsolute(file) ? file : join(cwd, file)
+      try {
+        const content = await readFile(path, 'utf8')
+        if (content.trim().length > 0) parts.push(content.trim())
+      } catch {
+        // Absent or unreadable: skip, exactly as if it were not configured.
+      }
+    }
+    if (parts.length === 0) return undefined
+    return '[host briefing] Background from the workspace owner, for context. '
+      + `The visitor's message follows below the divider.\n\n${parts.join('\n\n---\n\n')}`
+  }
+
+  /**
    * Create the workspace directory and prove it is enterable.
    *
    * A failure here refuses the request rather than falling back to a shared
@@ -229,7 +251,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     activation: Activation,
     taskId: A2ATaskId,
     state: A2ATaskState,
-    extra: { turn?: number; stopReason?: string; output?: string } = {},
+    extra: { turn?: number; input?: string; stopReason?: string; output?: string } = {},
   ): void => {
     try {
       activation.agent.session.append('a2a/task', {
@@ -237,6 +259,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         peer: activation.peer,
         state,
         ...extra.turn === undefined ? {} : { turn: extra.turn },
+        ...extra.input === undefined ? {} : { input: extra.input },
         ...extra.stopReason === undefined ? {} : { stopReason: extra.stopReason },
         ...extra.output === undefined ? {} : { output: extra.output },
       })
@@ -362,6 +385,9 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       handle,
       peer,
       cwd,
+      // Read before registration so the FIRST submit can merge it; the read is
+      // best effort and undefined simply means no briefing was waiting.
+      preambleText: await readPreamble(cwd),
       slots: new Map(),
       lastTouchedAt: Date.now(),
     }
@@ -373,12 +399,14 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     //
     // The event key is written through an untyped view because the approval
     // vocabulary belongs to a package a composition may not mount at all; when
-    // it is absent this append is simply a log row nothing folds.
+    // it is absent this append is simply a log row nothing folds. The payload
+    // carries no `source`: the typed union admits only 'delegation', and this
+    // policy comes from the transport, not a delegating parent.
     try {
       const session = handle.agent.session as unknown as {
         append: (type: string, data: unknown) => void
       }
-      session.append('approval/policy', { policy: 'never', source: 'a2a' })
+      session.append('approval/policy', { policy: 'never' })
     } catch (error: unknown) {
       logger.warn(`a2a: could not pin approval policy: ${String(error)}`)
     }
@@ -461,6 +489,53 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
     }
   }
 
+  // ── Local monitoring surface (admin) ───────────────────────────────────
+  // Loopback-only, read-only, and off unless a token reference is configured:
+  // the surface shows every visitor's words, so it must never be reachable
+  // from a network the visitors themselves use.
+  const adminTokenEnv = config.admin !== undefined
+    && typeof config.admin.tokenEnv === 'string'
+    && config.admin.tokenEnv.length > 0
+    ? config.admin.tokenEnv
+    : undefined
+  const resolveAdminToken = adminTokenEnv === undefined
+    ? undefined
+    : async (): Promise<string | undefined> => {
+      const hit = await credentials.resolve(adminTokenEnv as never)
+      return hit !== undefined && hit.value.length > 0 ? hit.value : undefined
+    }
+
+  /**
+   * The whole monitoring view over resident contexts.
+   *
+   * Tasks come from the projection — it already holds every task this context
+   * has seen, in-flight ones included (their `a2a/task` edges were appended on
+   * submission), so the snapshot needs no second bookkeeping path. Contexts
+   * evicted from residency drop out of the view until they are resumed.
+   */
+  const adminSnapshot = (): AdminSnapshot => ({
+    generatedAt: new Date().toISOString(),
+    contexts: contexts.values().map(activation => {
+      const views = projections === undefined
+        ? []
+        : Object.values(projections.snapshot(activation.agent.session).values.a2aTask?.tasks ?? {})
+      return {
+        contextId: activation.contextId,
+        peer: activation.peer,
+        cwd: activation.cwd,
+        lastTouchedAt: activation.lastTouchedAt,
+        active: activation.slots.size,
+        tasks: views.map(view => ({
+          taskId: view.taskId,
+          state: view.state,
+          ...view.input === undefined ? {} : { input: view.input },
+          ...view.output === undefined ? {} : { output: view.output },
+          updatedAt: view.updatedAt,
+        })),
+      }
+    }),
+  })
+
   // ── Router ─────────────────────────────────────────────────────────────
   const deps: RouterDeps = {
     readProjectedTask,
@@ -482,15 +557,21 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         throw new Error('the agent was disposed outside the A2A server')
       }
       const taskId = A2ATaskId(randomUUID())
+      // The briefing rides along with this context's FIRST message only — one
+      // model call is spared versus its own turn, and the recorded task `input`
+      // stays the visitor's own words, not the merged text.
+      const briefing = activation.preambleText
+      activation.preambleText = undefined
+      const submitted = briefing === undefined ? text : `${briefing}\n\n---\n\n${text}`
       const message = createUserMessage({
-        content: [{ type: 'text', text }],
+        content: [{ type: 'text', text: submitted }],
         source: { kind: 'a2a-peer', peer, taskId, form: 'relay' } as never,
       })
       const slot = createSlot(taskId, message.id)
       // Arm the slot before followup(): a listener-driven synchronous turn would
       // otherwise slip past correlation and leave the task turnless forever.
       activation.slots.set(taskId, slot)
-      appendTaskEdge(activation, taskId, 'TASK_STATE_SUBMITTED')
+      appendTaskEdge(activation, taskId, 'TASK_STATE_SUBMITTED', { input: text })
       try {
         activation.agent.followup(message)
       } catch (error: unknown) {
@@ -515,6 +596,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       artifacts,
       ...stopReason === undefined ? {} : { metadata: { dsh: { stopReason } } },
     }),
+    ...resolveAdminToken === undefined ? {} : { resolveAdminToken, adminSnapshot },
   }
 
   const router = createRouter(deps)
@@ -536,6 +618,16 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       path: config.basePath,
       handler: (req, res) => { void router.serveRpc(req, res) },
     })
+    if (adminTokenEnv !== undefined) {
+      // Prefix route (no trailing slash, per the webserver's contract): it
+      // matches `/a2a/admin` and everything under it; the router checks the
+      // loopback origin and the admin token.
+      yield webServer.register({
+        kind: 'prefix',
+        path: `${config.basePath}/admin`,
+        handler: (req, res) => { void router.serveAdmin(req, res) },
+      })
+    }
   }, 'a2a.routes')
 
   // ── Idle eviction ──────────────────────────────────────────────────────
@@ -583,7 +675,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       const subagents = ctx.get('subagents') as ContinuableDrain | undefined
       if (subagents !== undefined) {
         try {
-          await subagents.drainContinuableDescendants(activations.map(a => a.agent))
+          await subagents.drainDescendants(activations.map(a => a.agent))
         } catch (error: unknown) {
           logger.warn(`a2a: continuable subagent teardown failed: ${String(error)}`)
         }

@@ -35,6 +35,15 @@ declare module '@deepseek-ai/dsh-session/types' {
       state: A2ATaskState
       /** The turn this task correlates with, once one has claimed its message. */
       turn?: number
+      /**
+       * Non-terminal edges: the visitor's submitted text, verbatim.
+       *
+       * Recorded so the monitoring surface can show what a visitor SAID without
+       * reaching into the message history — the same whole-value discipline the
+       * terminal edge applies to `output`. Absent on terminal edges, which carry
+       * the answer instead.
+       */
+      input?: string
       /** Terminal edges only: the real harness turn ending, for Task.metadata. */
       stopReason?: string
       /**

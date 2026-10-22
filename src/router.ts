@@ -93,7 +93,46 @@ export interface RouterDeps {
    * {@link readProjectedTask}.
    */
   readProjectedTasks?: (activation: Activation) => A2ATask[]
+  /**
+   * Resolve the admin token, per request. Present exactly when the deployment
+   * configured `admin.tokenEnv`; absent means the admin surface is not mounted.
+   */
+  resolveAdminToken?: () => Promise<string | undefined>
+  /** The whole monitoring view over resident contexts. */
+  adminSnapshot?: () => AdminSnapshot
 }
+
+/** One task as the monitoring surface shows it. */
+export interface AdminTaskView {
+  taskId: string
+  state: A2ATaskState
+  /** What the visitor said, as recorded on the task's non-terminal edges. */
+  input?: string
+  /** What the agent answered, when the task has settled with output. */
+  output?: string
+  updatedAt: string
+}
+
+/** One resident context as the monitoring surface shows it. */
+export interface AdminContextView {
+  contextId: string
+  peer: string
+  cwd: string
+  lastTouchedAt: number
+  /** Tasks still in flight. */
+  active: number
+  /** Every task this context has seen, in fold order. */
+  tasks: AdminTaskView[]
+}
+
+/** What `{basePath}/admin/contexts` serves. */
+export interface AdminSnapshot {
+  generatedAt: string
+  contexts: AdminContextView[]
+}
+
+/** Addresses the monitoring surface accepts a connection from, and only those. */
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 
 /** One live SSE subscription. */
 interface StreamChannel {
@@ -107,6 +146,8 @@ interface StreamChannel {
 export interface Router {
   serveCard: (req: IncomingMessage, res: ServerResponse) => void
   serveRpc: (req: IncomingMessage, res: ServerResponse) => Promise<void>
+  /** The loopback-only monitoring surface under `{basePath}/admin/`. */
+  serveAdmin: (req: IncomingMessage, res: ServerResponse) => Promise<void>
   /** Send every open stream its terminal frame, then end it. */
   closeStreams: () => void
 }
@@ -678,6 +719,70 @@ export function createRouter(deps: RouterDeps): Router {
     })
   }
 
+  /**
+   * Serve the monitoring surface: GET `{basePath}/admin/contexts` and
+   * `{basePath}/admin/contexts/<contextId>`.
+   *
+   * Two gates, both required: the connection must originate from loopback, and
+   * the request must carry the configured admin token. The body of a failure is
+   * plain JSON, not a JSON-RPC envelope — this surface is not A2A.
+   */
+  const serveAdmin = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const fail = (status: number, code: string, message: string): void => {
+      res.writeHead(status, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { code, message } }))
+    }
+    try {
+      if (deps.resolveAdminToken === undefined || deps.adminSnapshot === undefined) {
+        fail(404, 'not_mounted', 'the admin surface is not configured on this deployment')
+        return
+      }
+      if (req.method !== 'GET') {
+        res.setHeader('allow', 'GET')
+        fail(405, 'method_not_allowed', 'the admin surface is read-only')
+        return
+      }
+      // The loopback check is a hard boundary, not authentication: the token
+      // alone must never be enough, because this surface shows every visitor's
+      // words and could be reached through a forwarded port otherwise.
+      if (!LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? '')) {
+        fail(403, 'not_loopback', 'the admin surface accepts loopback connections only')
+        return
+      }
+      const expected = await deps.resolveAdminToken()
+      if (expected === undefined) {
+        fail(401, 'admin_token_unconfigured', 'admin.tokenEnv resolves to no credential')
+        return
+      }
+      const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]
+      if (presented !== expected) {
+        fail(401, 'unauthorized', 'a valid admin token is required')
+        return
+      }
+      const snapshot = deps.adminSnapshot()
+      const wanted = decodeURIComponent(
+        new URL(req.url ?? '/', 'http://localhost').pathname
+          .replace(/\/+$/, '')
+          .split('/').filter(Boolean).slice(-1)[0] ?? '',
+      )
+      // `contexts` itself lists everything; a contextId narrows to one context.
+      const view = wanted === '' || wanted === 'contexts'
+        ? snapshot
+        : {
+          generatedAt: snapshot.generatedAt,
+          contexts: snapshot.contexts.filter(context => context.contextId === wanted),
+        }
+      if (view.contexts.length === 0 && wanted !== '' && wanted !== 'contexts') {
+        fail(404, 'not_found', `no resident context "${wanted}"`)
+        return
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(view))
+    } catch (error: unknown) {
+      fail(500, 'internal', String(error))
+    }
+  }
+
   const closeStreams = (): void => {
     for (const channel of streams) {
       try {
@@ -694,7 +799,7 @@ export function createRouter(deps: RouterDeps): Router {
     streams.clear()
   }
 
-  return { serveCard, serveRpc, closeStreams }
+  return { serveCard, serveRpc, serveAdmin, closeStreams }
 }
 
 /**

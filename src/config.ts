@@ -92,6 +92,28 @@ export interface PushConfig {
   enabled: boolean
 }
 
+/**
+ * The host's background briefing, injected when a visitor's context opens.
+ *
+ * The files are read once per Activation (best effort: an absent file is the
+ * normal "nothing to hand over" case) and merged into the context's FIRST
+ * visitor message rather than sent as their own turn — one model call is
+ * spared, and the turn counters stay about the visitor's messages only.
+ */
+export interface PreambleConfig {
+  /** Paths relative to the peer workspace (absolute paths pass through). */
+  files: string[]
+}
+
+/** Local-only monitoring surface credentials. */
+export interface AdminConfig {
+  /**
+   * Credential REFERENCE name holding the admin token, NOT the token itself.
+   * Empty or absent means the monitoring surface stays unmounted.
+   */
+  tokenEnv: string
+}
+
 /** The whole plugin configuration. */
 export interface A2AServerConfig {
   basePath: string
@@ -114,6 +136,12 @@ export interface A2AServerConfig {
   contextIdleTtlMs: number
   maxResidentContexts: number
   isolation: IsolationConfig
+  preamble: PreambleConfig
+  /**
+   * When set, a loopback-only read-only monitoring endpoint is served under
+   * `{basePath}/admin/`. Absent means no admin surface at all.
+   */
+  admin?: AdminConfig
   push: PushConfig
 }
 
@@ -178,6 +206,18 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
     peerWorkspaces: Schema.dict(Schema.string()).default({}),
   }).required(),
 
+  preamble: Schema.object({
+    files: Schema.array(Schema.string()).default(['.hop/handoff.md']),
+  }),
+
+  // Schemastery instantiates a nested object even when the deployment omits
+  // it, so `required()` here would make every admin-less config fail at load.
+  // An empty tokenEnv instead reads as "not configured", and the coherence
+  // check below is what keeps a non-empty one a valid REFERENCE name.
+  admin: Schema.object({
+    tokenEnv: Schema.string().default(''),
+  }),
+
   push: Schema.object({
     enabled: Schema.boolean().default(false),
   }),
@@ -224,6 +264,16 @@ export function assertConfigCoherent(config: A2AServerConfig): void {
         `isolation.peerWorkspaces names "${peer}", which is not declared in peers`,
       )
     }
+  }
+  const adminTokenEnv = config.admin === undefined
+    || typeof config.admin.tokenEnv !== 'string'
+    || config.admin.tokenEnv.length === 0
+    ? undefined
+    : config.admin.tokenEnv
+  if (adminTokenEnv !== undefined && !CREDENTIAL_REF.test(adminTokenEnv)) {
+    throw new A2AConfigError(
+      `admin.tokenEnv must be a credential REFERENCE name (${String(CREDENTIAL_REF)}), not a token value`,
+    )
   }
   if (!config.basePath.startsWith('/')) {
     throw new A2AConfigError(`basePath must start with "/": ${config.basePath}`)

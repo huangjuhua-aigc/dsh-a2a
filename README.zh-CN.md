@@ -16,7 +16,7 @@
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm 版本"></a>
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC 绑定">
-  <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="基于 DSH 0.1.0-rc.6 构建">
+  <img src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4493F8?style=flat" alt="基于 DSH 0.2.1-rc.2 构建">
   <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 项测试">
 </p>
 
@@ -35,7 +35,8 @@ dsh plugin --profile web add dsh-a2a-server
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
-`dsh.profile.bundles`——因为包中声明了 `dsh.bundle`。
+`dsh.profile.bundles`——因为包中声明了 `dsh.bundle`。自 DSH v0.2.1-alpha.1 起，
+`--profile` 必须放在所有 pnpm 参数之前——上面的写法已经是正确的。
 
 若想直接使用本地检出，把路径指过去即可：
 
@@ -116,6 +117,7 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent-card.json` | GET | 默认公开 |
 | `/.well-known/agent.json` | GET | 默认公开 |
 | `{basePath}`（默认 `/a2a`） | POST | 必须携带 Bearer |
+| `{basePath}/admin`、`{basePath}/admin/contexts[/<id>]` | GET | 仅接受本地回环连接 + admin token；仅在配置 `admin.tokenEnv` 时挂载 |
 
 | JSON-RPC 方法 | 状态 |
 | --- | --- |
@@ -223,6 +225,8 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 | `isolation.workspaceMode` | `per-peer` | `per-peer` 或 `shared` |
 | `isolation.workspaceRoot` | — | 必填；父目录或共享 cwd |
 | `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录 |
+| `preamble.files` | `[".hop/handoff.md"]` | 主人背景简报文件（相对 peer 工作目录），合并进该 context 的首条访客消息；文件不存在则跳过 |
+| `admin.tokenEnv` | — | 仅本地监控面的 token 凭据引用；不配置则不挂载监控面 |
 | `push.enabled` | `false` | 保留字段，见[边界](#边界) |
 
 以下情况在加载期即被拒绝：缺少 `isolation.workspaceRoot`；peer 名不匹配
@@ -333,8 +337,10 @@ pnpm build      # 产出 lib/
 - A2A task 与 harness turn 之间的映射
 - 按 peer 的认证、隔离与工作目录策略
 
-harness 处于 pre-release 阶段，不承诺跨重命名或重新打包的兼容性，因此 peer 依赖精确锁定
-在 `0.1.0-rc.6`。
+harness 处于 pre-release 阶段，不承诺跨重命名或重新打包的兼容性，因此兼容性通过
+`engines.dsh`（`>=0.2.1-rc.2 <0.3.0`）加上按 range 声明的 `@deepseek-ai/dsh-*`
+peer 依赖来表达：安装预检会拒绝任何插件未曾适配过的组合，而这个 range 也放行后续
+所有的 0.2.x 补丁版本。
 
 ## 社区交流
 

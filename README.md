@@ -16,7 +16,7 @@
   <a href="https://www.npmjs.com/package/dsh-a2a-server"><img src="https://img.shields.io/npm/v/dsh-a2a-server?style=flat&label=npm&color=CB3837" alt="npm version"></a>
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC binding">
-  <img src="https://img.shields.io/badge/DSH-0.1.0--rc.6-4493F8?style=flat" alt="Built against DSH 0.1.0-rc.6">
+  <img src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4493F8?style=flat" alt="Built against DSH 0.2.1-rc.2">
   <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 tests">
 </p>
 
@@ -38,6 +38,8 @@ dsh plugin --profile web add dsh-a2a-server
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
 bundle to `dsh.profile.bundles`, because the package declares `dsh.bundle`.
+Since DSH v0.2.1-alpha.1, `--profile` must come before any pnpm arguments —
+the forms above already do.
 
 To work from a checkout instead, point it at the directory:
 
@@ -121,6 +123,7 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent-card.json` | GET | Public by default |
 | `/.well-known/agent.json` | GET | Public by default |
 | `{basePath}` (default `/a2a`) | POST | Bearer required |
+| `{basePath}/admin`, `{basePath}/admin/contexts[/<id>]` | GET | Loopback connection + admin token; mounted only when `admin.tokenEnv` is set |
 
 | JSON-RPC method | Status |
 | --- | --- |
@@ -236,6 +239,8 @@ another peer answers exactly as an absent one.
 | `isolation.workspaceMode` | `per-peer` | `per-peer` or `shared` |
 | `isolation.workspaceRoot` | — | Required; parent directory or shared cwd |
 | `isolation.peerWorkspaces` | `{}` | Per-identity working-directory override |
+| `preamble.files` | `[".hop/handoff.md"]` | Host briefing files (relative to the peer workspace), merged into a context's first message; absent files are skipped |
+| `admin.tokenEnv` | — | Credential reference for the loopback-only monitoring token; unset leaves the admin surface unmounted |
 | `push.enabled` | `false` | Reserved; see [Boundaries](#boundaries) |
 
 Configuration is refused at load when `isolation.workspaceRoot` is absent, a peer
@@ -357,7 +362,10 @@ capability seams this plugin consumes. This project supplies:
 - Per-peer authentication, isolation, and workspace policy
 
 The harness is pre-release and does not promise compatibility across renames or
-repackaging, so peer dependencies are pinned exactly to `0.1.0-rc.6`.
+repackaging, so compatibility is declared through `engines.dsh`
+(`>=0.2.1-rc.2 <0.3.0`) plus range-bounded `@deepseek-ai/dsh-*` peer
+dependencies: an install preflight refuses any combination the plugin was not
+built against, and the range admits every 0.2.x patch that follows.
 
 ## Community
 

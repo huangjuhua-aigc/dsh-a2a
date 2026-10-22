@@ -7,12 +7,15 @@
 # REQUIRES ctx.webServer, which ships in `dsh-web-app`, NOT in `dsh-base`. On a
 # profile without it this row loads but stays PENDING (Cordis holds a plugin
 # whose injected services are absent), so nothing serves and nothing errors.
+#
+# NOTE: keep this file plain YAML — the installer's package validation parses
+# it with a strict loader that rejects `!!js` expressions, even though the
+# runtime overlay loader accepts them.
 - insert:
     - id: a2a-server
       name: dsh-a2a-server
       config:
         basePath: /a2a
-        protocolVersion: '0.3.0'
         card:
           name: dsh-harness
           description: A DeepSeek Harness agent reachable over A2A.
@@ -24,7 +27,9 @@
           # directory, which also makes the cwd-equality authority in
           # cross-session tooling separate peers for free. A deployment whose
           # peers collaborate on one repository must say so explicitly.
+          # This placeholder is overridden by any real deployment layer (the
+          # console's overlay sets it per agent); supply an absolute path.
           workspaceMode: per-peer
-          workspaceRoot: !!js `${process.env.DSH_HOME ?? process.env.HOME}/a2a-workspaces`
+          workspaceRoot: /srv/dsh/a2a
         push:
           enabled: false
