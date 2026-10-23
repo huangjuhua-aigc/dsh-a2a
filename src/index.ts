@@ -162,6 +162,10 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
 
   // ── Workspace resolution ───────────────────────────────────────────────
   const workspaceFor = (peer: PeerIdentity): string => {
+    // The owner's caretaker context lives in the briefing directory — its
+    // workspace-write boundary under the sandbox is exactly this folder, so
+    // the console-driven agent can maintain the briefing and nothing else.
+    if (peer === 'owner') return join(config.isolation.workspaceRoot, '.hop')
     const override = config.isolation.peerWorkspaces[peer]
     if (override !== undefined) return override
     return config.isolation.workspaceMode === 'shared'
@@ -170,15 +174,17 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
   }
 
   /**
-   * Read the host briefing files for one workspace, best effort.
+   * Read the host briefing files, best effort.
    *
-   * An absent file is the normal "nothing to hand over" case, not an error:
-   * most contexts open with no briefing waiting for them.
+   * The briefing is AGENT-level data — one file shared by every visitor of
+   * this deployment — so relative paths resolve against the workspace ROOT,
+   * not against any visitor's directory. An absent file is the normal
+   * "nothing to hand over" case, not an error.
    */
-  const readPreamble = async (cwd: string): Promise<string | undefined> => {
+  const readPreamble = async (): Promise<string | undefined> => {
     const parts: string[] = []
     for (const file of config.preamble.files) {
-      const path = isAbsolute(file) ? file : join(cwd, file)
+      const path = isAbsolute(file) ? file : join(config.isolation.workspaceRoot, file)
       try {
         const content = await readFile(path, 'utf8')
         if (content.trim().length > 0) parts.push(content.trim())
@@ -361,16 +367,39 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
    * rejected rather than waiting on a prompt nobody is watching, and the policy
    * stays reconstructable from that log alone.
    */
+  /**
+   * The preset seam, declared structurally: mounting a preset is what gives an
+   * agent its model-visible toolbox (bash, fs, schedule, …). A bare create
+   * only sees the host plane's globals — which is why this exists at all.
+   */
+  interface PresetMounter {
+    mount(agentCtx: Context, presetId?: string): Promise<void>
+  }
+
   const createActivation = async (peer: PeerIdentity): Promise<Activation> => {
     const cwd = workspaceFor(peer)
     await ensureWorkspace(cwd)
     const sessionId = SessionId(randomUUID())
+    const presets = ctx.get('agentPresets') as PresetMounter | undefined
     const handle = await agents.create({
       sessionId,
-      meta: { cwd },
+      meta: {
+        cwd,
+        // Persisted session identity so a cold resume re-resolves the same
+        // toolbox; the mount below is what actually installs it.
+        ...presets === undefined ? {} : { agentPreset: 'standard' },
+      },
       agentOptions: {
         ...config.provider === undefined ? {} : { provider: config.provider },
         ...config.model === undefined ? {} : { model: config.model },
+      },
+      ...presets === undefined ? {} : {
+        // The web app's own session controller mounts the selected preset in
+        // the same place (its composeAgent) — the agent toolbox is preset-
+        // scoped, never ambient.
+        setup: async (agentCtx: Context) => {
+          await presets.mount(agentCtx, 'standard')
+        },
       },
     })
     if (closed) {
@@ -386,8 +415,9 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       peer,
       cwd,
       // Read before registration so the FIRST submit can merge it; the read is
-      // best effort and undefined simply means no briefing was waiting.
-      preambleText: await readPreamble(cwd),
+      // best effort and undefined simply means no briefing was waiting. The
+      // file lives at the workspace ROOT — one briefing for every visitor.
+      preambleText: await readPreamble(),
       slots: new Map(),
       lastTouchedAt: Date.now(),
     }
@@ -407,8 +437,14 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
         append: (type: string, data: unknown) => void
       }
       session.append('approval/policy', { policy: 'never' })
+      // The owner's caretaker session writes the briefing directory and
+      // nothing else: workspace-write with cwd = <root>/.hop is exactly that
+      // fence. Visitors keep the deployment-wide read-only default.
+      if (peer === 'owner') {
+        session.append('sandbox/mode', { mode: 'workspace-write' })
+      }
     } catch (error: unknown) {
-      logger.warn(`a2a: could not pin approval policy: ${String(error)}`)
+      logger.warn(`a2a: could not pin session policies: ${String(error)}`)
     }
     contexts.add(activation)
     return activation
@@ -504,6 +540,8 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       const hit = await credentials.resolve(adminTokenEnv as never)
       return hit !== undefined && hit.value.length > 0 ? hit.value : undefined
     }
+  /** The owner's RPC secret is the same token the monitoring surface uses. */
+  const resolveOwnerSecret = resolveAdminToken
 
   /**
    * The whole monitoring view over resident contexts.
@@ -596,7 +634,7 @@ export function apply(ctx: Context, config: A2AServerConfig): void {
       artifacts,
       ...stopReason === undefined ? {} : { metadata: { dsh: { stopReason } } },
     }),
-    ...resolveAdminToken === undefined ? {} : { resolveAdminToken, adminSnapshot },
+    ...resolveAdminToken === undefined ? {} : { resolveOwnerSecret, adminSnapshot },
   }
 
   const router = createRouter(deps)

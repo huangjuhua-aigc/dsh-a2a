@@ -225,7 +225,7 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 | `isolation.workspaceMode` | `per-peer` | `per-peer` 或 `shared` |
 | `isolation.workspaceRoot` | — | 必填；父目录或共享 cwd |
 | `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录 |
-| `preamble.files` | `[".hop/handoff.md"]` | 主人背景简报文件（相对 peer 工作目录），合并进该 context 的首条访客消息；文件不存在则跳过 |
+| `preamble.files` | `[".hop/handoff.md"]` | 主人背景简报文件（**agent 级**：相对工作区根目录解析，全体访客共用一份；绝对路径直通），合并进每个 context 的首条访客消息；文件不存在则跳过 |
 | `admin.tokenEnv` | — | 仅本地监控面的 token 凭据引用；不配置则不挂载监控面 |
 | `push.enabled` | `false` | 保留字段，见[边界](#边界) |
 

@@ -65,9 +65,11 @@ afterEach(async () => {
 
 describe('the host briefing', () => {
   it('reaches the model with the first message when the file exists', async () => {
-    await mkdir(join(workspaceRoot, 'alice', '.hop'), { recursive: true })
+    // The briefing is agent-level data at the workspace ROOT, shared by every
+    // visitor — not one file per visitor directory.
+    await mkdir(join(workspaceRoot, '.hop'), { recursive: true })
     await writeFile(
-      join(workspaceRoot, 'alice', '.hop', 'handoff.md'),
+      join(workspaceRoot, '.hop', 'handoff.md'),
       '最近在做 dsh-a2a 升级，关键决定：出站用 skill 形态。',
     )
     const first = await rpc(app!.rpcUrl, sendRequest(1, '你好'))
@@ -80,8 +82,8 @@ describe('the host briefing', () => {
   })
 
   it('rides along exactly once', async () => {
-    await mkdir(join(workspaceRoot, 'alice', '.hop'), { recursive: true })
-    await writeFile(join(workspaceRoot, 'alice', '.hop', 'handoff.md'), '只应出现一次的背景')
+    await mkdir(join(workspaceRoot, '.hop'), { recursive: true })
+    await writeFile(join(workspaceRoot, '.hop', 'handoff.md'), '只应出现一次的背景')
     const first = await rpc(app!.rpcUrl, sendRequest(1, '第一条'))
     const contextId = first.result.task.contextId as string
     const second = await rpc(app!.rpcUrl, sendRequest(2, '第二条', contextId))

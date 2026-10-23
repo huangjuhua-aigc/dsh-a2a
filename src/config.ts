@@ -242,6 +242,9 @@ export class A2AConfigError extends Error {
  */
 export function assertConfigCoherent(config: A2AServerConfig): void {
   for (const [peer, entry] of Object.entries(config.peers)) {
+    if (peer === 'owner') {
+      throw new A2AConfigError('peer name "owner" is reserved for the deployment owner (the local console)')
+    }
     if (!PEER_NAME.test(peer)) {
       throw new A2AConfigError(
         `peer name "${peer}" must match ${String(PEER_NAME)}: it becomes a workspace directory component`,

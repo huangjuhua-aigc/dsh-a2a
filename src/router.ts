@@ -65,6 +65,13 @@ export interface RouterDeps {
   logger: { warn: (message: string) => void; error: (message: string) => void }
   assertOpen: () => void
   resolvePeerSecrets: () => Promise<Map<PeerIdentity, string>>
+  /**
+   * Resolve the deployment owner's token, per request. The owner is the
+   * console on this machine: it never appears in the peers table, is exempt
+   * from the rate limit and turn cap, and runs the caretaker context (its
+   * writable scope is the briefing directory, not the workspace itself).
+   */
+  resolveOwnerSecret?: (() => Promise<string | undefined>) | undefined
   identify: (token: string | undefined, secrets: ReadonlyMap<PeerIdentity, string>) => PeerIdentity | undefined
   cardFor: (hostHeader: string | undefined) => A2AAgentCard
   /** The authenticated extended card, or undefined when none is configured. */
@@ -97,7 +104,6 @@ export interface RouterDeps {
    * Resolve the admin token, per request. Present exactly when the deployment
    * configured `admin.tokenEnv`; absent means the admin surface is not mounted.
    */
-  resolveAdminToken?: () => Promise<string | undefined>
   /** The whole monitoring view over resident contexts. */
   adminSnapshot?: () => AdminSnapshot
 }
@@ -224,12 +230,17 @@ export function createRouter(deps: RouterDeps): Router {
     let peer: PeerIdentity | undefined
     try {
       deps.assertOpen()
-      const secrets = await deps.resolvePeerSecrets()
-      const header = req.headers.authorization
-      peer = deps.identify(
-        typeof header === 'string' ? /^Bearer\s+(.+)$/i.exec(header.trim())?.[1] : undefined,
-        secrets,
-      )
+      const presented = typeof req.headers.authorization === 'string'
+        ? /^Bearer\s+(.+)$/i.exec(req.headers.authorization.trim())?.[1]
+        : undefined
+      // The owner's token wins before the visitor table, so a visitor named
+      // "owner" can never shadow the console's identity.
+      const ownerSecret = await deps.resolveOwnerSecret?.()
+      if (presented !== undefined && ownerSecret !== undefined && presented === ownerSecret) {
+        peer = 'owner'
+      } else {
+        peer = deps.identify(presented, await deps.resolvePeerSecrets())
+      }
     } catch (error: unknown) {
       sendJson(res, 503, jsonRpcError(null, ERR_INVALID_REQUEST, String(error)))
       return
@@ -239,15 +250,13 @@ export function createRouter(deps: RouterDeps): Router {
       sendAuthFailure(res, 401, 'unauthorized')
       return
     }
-    if (!deps.rateLimiter.allow(peer)) {
+    if (peer !== 'owner' && !deps.rateLimiter.allow(peer)) {
       sendAuthFailure(res, 429, 'rate limit exceeded')
       return
     }
-    // An EMPTY allow list means "no allow list", matching the documented
-    // "omit to allow every authenticated peer". Schemastery materializes an
-    // omitted array as `[]`, so testing only for `undefined` would silently
-    // lock out every peer on a config that never mentioned trustedPeers.
-    if (config.trustedPeers !== undefined && config.trustedPeers.length > 0
+    // The owner bypasses the visitor allow list: the console IS the trust.
+    if (peer !== 'owner'
+      && config.trustedPeers !== undefined && config.trustedPeers.length > 0
       && !config.trustedPeers.includes(peer)) {
       sendAuthFailure(res, 403, `peer "${peer}" is not trusted`)
       return
@@ -462,7 +471,9 @@ export function createRouter(deps: RouterDeps): Router {
           : continueTask(parsed.message.taskId, peer)
 
         const turn = deps.turns.track(activation.contextId)
-        if (turn > config.maxContextTurns) {
+        // The owner's caretaker context is long-lived by design (scheduled
+        // briefing upkeep); the visitor turn cap does not apply to it.
+        if (peer !== 'owner' && turn > config.maxContextTurns) {
           const rejected = deps.taskSnapshot(
             activation,
             { taskId: 'rejected' as A2ATaskId } as TaskSlot,
@@ -733,7 +744,7 @@ export function createRouter(deps: RouterDeps): Router {
       res.end(JSON.stringify({ error: { code, message } }))
     }
     try {
-      if (deps.resolveAdminToken === undefined || deps.adminSnapshot === undefined) {
+      if (deps.resolveOwnerSecret === undefined || deps.adminSnapshot === undefined) {
         fail(404, 'not_mounted', 'the admin surface is not configured on this deployment')
         return
       }
@@ -744,12 +755,16 @@ export function createRouter(deps: RouterDeps): Router {
       }
       // The loopback check is a hard boundary, not authentication: the token
       // alone must never be enough, because this surface shows every visitor's
-      // words and could be reached through a forwarded port otherwise.
-      if (!LOOPBACK_ADDRESSES.has(req.socket.remoteAddress ?? '')) {
-        fail(403, 'not_loopback', 'the admin surface accepts loopback connections only')
+      // words and could be reached through a forwarded port otherwise. A
+      // server bound to a LAN address is reached over that address from this
+      // same machine (remote equals local), which is local traffic too.
+      const remote = req.socket.remoteAddress ?? ''
+      const local = req.socket.localAddress ?? ''
+      if (!LOOPBACK_ADDRESSES.has(remote) && remote !== local) {
+        fail(403, 'not_loopback', 'the admin surface accepts local connections only')
         return
       }
-      const expected = await deps.resolveAdminToken()
+      const expected = await deps.resolveOwnerSecret?.()
       if (expected === undefined) {
         fail(401, 'admin_token_unconfigured', 'admin.tokenEnv resolves to no credential')
         return

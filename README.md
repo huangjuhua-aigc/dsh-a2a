@@ -239,7 +239,7 @@ another peer answers exactly as an absent one.
 | `isolation.workspaceMode` | `per-peer` | `per-peer` or `shared` |
 | `isolation.workspaceRoot` | — | Required; parent directory or shared cwd |
 | `isolation.peerWorkspaces` | `{}` | Per-identity working-directory override |
-| `preamble.files` | `[".hop/handoff.md"]` | Host briefing files (relative to the peer workspace), merged into a context's first message; absent files are skipped |
+| `preamble.files` | `[".hop/handoff.md"]` | Host briefing files (**agent-level**: resolved against the workspace root and shared by every visitor; absolute paths pass through), merged into each context's first message; absent files are skipped |
 | `admin.tokenEnv` | — | Credential reference for the loopback-only monitoring token; unset leaves the admin surface unmounted |
 | `push.enabled` | `false` | Reserved; see [Boundaries](#boundaries) |
 

@@ -61,7 +61,7 @@ export interface ComposeOptions {
   /** Files injected as the host briefing when a context opens; default `.hop/handoff.md` relative to each peer workspace. */
   preambleFiles?: string[]
   /** Credential reference for the loopback admin token; omit to leave the monitoring surface unmounted. */
-  adminTokenEnv?: string
+  adminTokenEnv?: string | undefined
   /**
    * Use the deterministic stub instead of a real model.
    *
