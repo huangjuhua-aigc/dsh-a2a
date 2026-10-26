@@ -17,7 +17,7 @@
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC 绑定">
   <img src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4493F8?style=flat" alt="基于 DSH 0.2.1-rc.2 构建">
-  <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 项测试">
+  <img src="https://img.shields.io/badge/tests-217-2EA44F?style=flat" alt="217 项测试">
 </p>
 
 `dsh-a2a-server` 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -30,8 +30,11 @@ subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力�
 
 ## 安装
 
+需要本机配置界面或跨网络访问时，先看配套 [Talk2MyAgent 使用说明](https://github.com/huangjuhua-aigc/Talk2MyAgent)。
+访客读取权限、自动简报、主人 IPC 与 Tailscale 部署详见[部署与迁移指南](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-access-hardening.md)。
+
 ```sh
-dsh plugin --profile web add dsh-a2a-server
+dsh plugin --profile web add dsh-a2a-server@0.3.0
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
@@ -49,11 +52,24 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 | `ctx.agents` | `dsh-base` |
 | `ctx.credentials` | `dsh-base` |
 | `ctx.webServer` | **`dsh-web-app`** |
-| `ctx.sessionProjections`（可选） | 组合层；启用后 `GetTask` 在任务结算后仍可应答 |
+| `ctx.tools` 和 `ctx.systemPrompt` | 必需的访客工具及提示词隔离服务 |
+| `ctx.sessionProjections`（可选） | 组合层；提供任务生命周期投影 |
 
-三个必需服务齐备之前，插件保持 PENDING。`ctx.webServer` 由 `dsh-web-app` 提供而不在
+必需服务齐备之前，插件保持 PENDING。`ctx.webServer` 由 `dsh-web-app` 提供而不在
 `dsh-base` 中，因此 `headless` profile 需要先挂载 `@deepseek-ai/dsh-host-webserver`。
 `dsh --profile <name> --dump-config` 可以打印组合出来的配置行。
+
+### 从 0.2.x 升级
+
+0.3.0 适配 DSH `>=0.2.1-rc.2 <0.3.0`。先停止 agent，将
+`dsh-a2a-server@0.3.0` 安装到原有 profile，再重新启动；配套 Portal 也需更新。
+主人 RPC 和监控已改为需要认证的本机 IPC，公网 HTTP 不接受主人凭据。
+访客可聊天并读取授权目录，其他工具关闭；空白名单 `trustedPeers: []` 拒绝所有访客。
+任务结果与空闲会话在保留期内可跨驱逐和重启恢复。
+
+新版 [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent) 默认开启每小时简报更新，
+用一个开关控制，完成后直接写入 `.hop/handoff.md`。单独安装协议插件而未配置 `briefing`
+不会自动执行简报任务。详见 [0.3.0 发布说明](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.zh-CN.md)。
 
 ## 快速开始
 
@@ -100,7 +116,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_PEERS` | `alice` | `名字[:token]` 列表；每个 peer 都必须有 token |
 | `A2A_PORT` | `9900` | 监听端口 |
 | `A2A_SEND_MODE` | `block` | `block` 或 `immediate` |
-| `A2A_WORKSPACE_ROOT` | 临时目录 | per-peer 工作目录的父目录 |
+| `A2A_WORKSPACE_ROOT` | 临时目录 | 访客授权资料目录，同时作为 per-peer 工作目录的父目录 |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 向适配器请求的模型 id |
 
 一次性探针会对运行中的服务执行 67 项检查，任何一项不符即以非零码退出：
@@ -117,14 +133,14 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent-card.json` | GET | 默认公开 |
 | `/.well-known/agent.json` | GET | 默认公开 |
 | `{basePath}`（默认 `/a2a`） | POST | 必须携带 Bearer |
-| `{basePath}/admin`、`{basePath}/admin/contexts[/<id>]` | GET | 仅接受本地回环连接 + admin token；仅在配置 `admin.tokenEnv` 时挂载 |
+| `{basePath}/admin/contexts[/<id>]` | GET | 仅本机 IPC + admin token，公网 HTTP 不挂载 |
 
 | JSON-RPC 方法 | 状态 |
 | --- | --- |
 | `SendMessage` | 是否等待逐请求协商 |
 | `SendStreamingMessage` | SSE |
 | `GetTask` | 幂等；结算后仍可应答 |
-| `ListTasks` | 游标分页、可过滤；仅覆盖常驻的 context |
+| `ListTasks` | 游标分页、可过滤；包括保留期内的持久化任务 |
 | `CancelTask` | 取消正在执行的 turn |
 | `SubscribeToTask` | 续订活任务；终态任务返回 `-32004` |
 | `GetExtendedAgentCard` | 已认证 peer 可见的额外 skill；未配置时 `-32007` |
@@ -173,12 +189,12 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 
     card:
       name: dsh-harness
-      description: 读代码、执行命令、给出结论。
+      description: 读取授权目录中的代码和资料，回答访客问题。
       public: true
       skills:
         - id: general
           name: general
-          description: 通用任务执行。
+          description: 对话与授权目录内的文件读取。
           tags: [coding, research]
       provider:
         organization: Example Inc.
@@ -215,18 +231,21 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 | `card.skills` | `[]` | 声明的 skills；为空时回退到一条 `general` |
 | `card.extendedSkills` | `[]` | 只对已认证 peer 经 `GetExtendedAgentCard` 公开的 skills |
 | `peers` | `{}` | 身份 → 凭据**引用名** |
-| `trustedPeers` | 全部已认证身份 | 允许执行任务的身份白名单 |
+| `trustedPeers` | 全部已认证身份 | 对话与受限文件读取白名单；`[]` 拒绝所有访客 |
 | `rateLimitPerMinute` | `60` | 按身份的滑动窗口 |
 | `maxContextTurns` | `5` | 单个 context 接受的消息数上限，超出后 `rejected` |
 | `sendMode` | `block` | 客户端未表态时的默认行为 |
-| `blockTimeoutMs` | `60000` | 超过后拒绝继续阻塞 |
+| `blockTimeoutMs` | `60000` | 最长阻塞等待；到期返回任务当前状态，客户端可继续查询 |
 | `contextIdleTtlMs` | `1800000` | context 的 agent 被释放前的空闲时长 |
 | `maxResidentContexts` | `64` | 常驻 context 数量上限 |
 | `isolation.workspaceMode` | `per-peer` | `per-peer` 或 `shared` |
-| `isolation.workspaceRoot` | — | 必填；父目录或共享 cwd |
-| `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录 |
+| `isolation.workspaceRoot` | — | 必填；授权资料目录，同时作为访客 cwd 的父目录或共享 cwd |
+| `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录和授权读取范围 |
 | `preamble.files` | `[".hop/handoff.md"]` | 主人背景简报文件（**agent 级**：相对工作区根目录解析，全体访客共用一份；绝对路径直通），合并进每个 context 的首条访客消息；文件不存在则跳过 |
-| `admin.tokenEnv` | — | 仅本地监控面的 token 凭据引用；不配置则不挂载监控面 |
+| `briefing.prompt` | — | 可选的单次简报更新指令，由 Portal 配置，通过有执行预算的主人 agent 每小时运行 |
+| `briefing.settingsFile` | — | 绝对路径；读取 `{ "enabled": boolean }` 设置，缺省开启，每 5 秒检查 |
+| `admin.tokenEnv` | — | 本机主人 RPC 和监控的凭据引用，公网 RPC 拒绝此凭据 |
+| `admin.socketPath` | 按部署生成 | Windows 命名管道或私有 Unix socket |
 | `push.enabled` | `false` | 保留字段，见[边界](#边界) |
 
 以下情况在加载期即被拒绝：缺少 `isolation.workspaceRoot`；peer 名不匹配
@@ -244,7 +263,8 @@ peers:
 
 ```yaml
 # ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
+refs:
+  A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 ```
 
 `ctx.credentials` 在每次请求时跨四层解析该引用——进程环境、托管文档、`<cwd>/.env`、
@@ -258,11 +278,18 @@ A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 | --- | --- | --- |
 | 模型上下文 | 一个 peer 的对话不会进入另一个 peer 的模型请求 | 不同 `contextId` → 不同 Session → 不同 log |
 | 协议访问 | peer 无法读取、续接或取消他人的 context 与任务 | 按认证身份判定归属 |
-| 工具层 | peer 的 agent 无法借工具读取他人的 session | `workspaceMode: per-peer` |
+| 工具层 | 仅提供受控 `read_file`，不开放写入、命令、联网或跨会话工具 | 屏蔽继承工具、专用读取工具、执行校验 |
+| 提示词 | 访客不继承可选的主人个性化提示与运行时上下文 | 独立的公共系统提示词 |
 
-`per-peer`（默认）依据 `workspaceRoot` 为每个身份派生独立 `cwd`。`shared` 则把所有 peer
-放进同一个目录，适用于协作维护同一个仓库的场景；此模式下一个 peer 写入的文件对其他 peer
-可读。
+`per-peer`（默认）依据 `workspaceRoot` 为每个身份派生独立 `cwd`；`shared` 使用同一个目录。
+这只是工作目录策略，不是文件系统沙箱。`read_file` 的读取范围默认是用户选择的
+`workspaceRoot`，有 `peerWorkspaces` 覆盖时限制为该访客的专属目录。工具相对路径从
+这个资料目录解析；插件私有状态目录始终排除。
+
+`read_file({"path":"."})` 列出资料目录；文件支持 UTF-8 文本，按 `offset`/`limit`
+分页。单文件上限 2 MiB，单次最多 32000 字符、500 行/项，目录扫描最多 1000 项。
+拒绝越界、符号链接/junction、硬链接和 Windows ADS。主人维护能力使用独立本机 IPC，
+保留可信管理工具，不能从公网入口调用。资源配额的完整配置表见英文 README。
 
 ## 边界
 
@@ -272,12 +299,14 @@ A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
   `pushNotifications: false`。
 - 不支持 `stateTransitionHistory`、协议扩展与 Card 签名。
 - 流式只推送已提交的 assistant 消息，未实现逐 chunk 推送。
-- 无孤儿任务看门狗：卡在非终态的任务会一直保持该状态。
-- 未实现跨会话工具拒绝；隔离依赖 `workspaceMode`。
+- 有并发准入、任务期限及模型调用预算；超时后等待底层适配器完成取消才释放执行名额。
+  不响应取消的适配器仍需进程级监管，这些额度不是按货币计费的预算。
+- 访客仅能使用有目录边界的 `read_file`；改变沙箱模式不会自动开放其他工具。
+  该工具边界不替代针对恶意本机管理员的操作系统隔离。
 - 触及 token 上限的任务结算为 `completed`，真实的 turn 结束原因放在
   `Task.metadata.dsh.stopReason`——A2A 的状态枚举无法表达它。
-- 任务状态可以跨结算存活，但无法跨进程重启：未组合 session 持久化，重启后 projection
-  没有日志可供冷折叠。
+- 任务结果与空闲会话在保留期内可跨进程重启恢复；中断的任务标记失败，不重放。
+- 每个 context 同时只允许一个任务，并发提交返回 409；messageId 不是提交去重键。
 - `ctx.webServer` 不提供 TLS。任何非回环地址的暴露都应置于反向代理之后。
 - 修改配置会重启插件并取消进行中的任务。
 
@@ -297,6 +326,10 @@ src/
 ├── tasks.ts           任务槽位与三段式 turn 关联
 ├── projection.ts      在 session log 上折叠出的 a2aTask 读模型
 ├── security.ts        认证、限流、注入去势、外发脱敏
+├── workspace-read.ts  授权目录内受限的 read_file
+├── management.ts      本机 IPC 主人 RPC 与监控
+├── state.ts           持久化任务及对话 checkpoint
+├── briefing.ts        每小时简报更新与持久化调度
 ├── config.ts          schema，以及加载期就会拒绝的跨字段校验
 └── types.ts           向 SessionEventMap / MessageSourceMap 的声明合并
 ```
@@ -310,17 +343,18 @@ src/
 历史。
 
 **驻留是显式管理的。** HTTP 没有连接生命周期，因此每个 `contextId` 对应一个 Activation，
-空闲后被驱逐，持久化的 Session 留在原地。
+空闲后被驱逐。私有 checkpoint 保留任务结果与对话历史，冷恢复时创建新的 harness session。
 
 ## 开发
 
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test       # 10 个文件共 167 项测试
+pnpm test       # 15 个文件共 217 项测试
 pnpm serve      # 启动监听服务
 pnpm probe      # 对运行中的服务执行 67 项检查
 pnpm build      # 产出 lib/
+pnpm test:package # 仅声明运行依赖时验证构建产物导入
 ```
 
 端到端测试会启动真实的 Cordis 组合与真实的 agent loop，并通过 HTTP 驱动它；模型使用

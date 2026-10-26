@@ -17,7 +17,7 @@
   <a href="https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/A2A-v1.0%20JSON--RPC-4D6BFE?style=flat" alt="A2A v1.0 JSON-RPC binding">
   <img src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4493F8?style=flat" alt="Built against DSH 0.2.1-rc.2">
-  <img src="https://img.shields.io/badge/tests-167-2EA44F?style=flat" alt="167 tests">
+  <img src="https://img.shields.io/badge/tests-217-2EA44F?style=flat" alt="217 tests">
 </p>
 
 `dsh-a2a-server` makes a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
@@ -30,10 +30,15 @@ The plugin is **inbound only**: it never connects to another agent. There is no
 client, no peer directory, and no A2A subagent provider. It is a transport
 adapter over `ctx.agents`, not a capability seam.
 
+For a local configuration UI and cross-network access, use the companion
+[Talk2MyAgent setup guide](https://github.com/huangjuhua-aigc/Talk2MyAgent/blob/main/README.en.md).
+See the [deployment and migration guide](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-access-hardening.en.md)
+for visitor permissions, automatic briefings, private owner access and Tailscale.
+
 ## Install
 
 ```sh
-dsh plugin --profile web add dsh-a2a-server
+dsh plugin --profile web add dsh-a2a-server@0.3.0
 ```
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
@@ -52,12 +57,27 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 | `ctx.agents` | `dsh-base` |
 | `ctx.credentials` | `dsh-base` |
 | `ctx.webServer` | **`dsh-web-app`** |
-| `ctx.sessionProjections` (optional) | composition; enables `GetTask` after settlement |
+| `ctx.tools` and `ctx.systemPrompt` | required visitor tool and prompt isolation services |
+| `ctx.sessionProjections` (optional) | composition; exposes task lifecycle projections |
 
-The plugin stays PENDING until the three required services exist. `ctx.webServer`
+The plugin stays PENDING until all required services exist. `ctx.webServer`
 ships in `dsh-web-app` rather than `dsh-base`, so a `headless` profile needs
 `@deepseek-ai/dsh-host-webserver` mounted before this bundle serves anything.
 `dsh --profile <name> --dump-config` prints the composed rows.
+
+### Upgrading from 0.2.x
+
+Version 0.3.0 requires DSH `>=0.2.1-rc.2 <0.3.0`. Stop the agent, install
+`dsh-a2a-server@0.3.0` into its existing profile, then restart it. Owner RPC and
+monitoring now use authenticated local IPC; update the companion Portal as well.
+Visitors retain chat and scoped workspace reads, while other tools are denied.
+An empty `trustedPeers: []` denies all visitors. Task results persist across
+restart within the configured retention window.
+
+The current [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent)
+configures default-on hourly briefings with one persistent switch. The plugin
+alone does not enable automatic briefing without its `briefing` configuration.
+See the [0.3.0 release notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.md).
 
 ## Quick start
 
@@ -105,7 +125,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_PEERS` | `alice` | `name[:token]` list; a token is required for each |
 | `A2A_PORT` | `9900` | Listening port |
 | `A2A_SEND_MODE` | `block` | `block` or `immediate` |
-| `A2A_WORKSPACE_ROOT` | temp dir | Parent of the per-peer working directories |
+| `A2A_WORKSPACE_ROOT` | temp dir | Authorized visitor data root and parent of per-peer working directories |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model id requested from the adapter |
 
 A one-shot probe runs 67 checks against a live server and exits non-zero on any
@@ -182,17 +202,17 @@ another peer answers exactly as an absent one.
 
     card:
       name: dsh-harness
-      description: Reads code, runs commands, reports findings.
+      description: Answers questions using code and text in the authorized directory.
       public: true
       skills:
         - id: general
           name: general
-          description: General-purpose task execution.
+          description: Chat and scoped file reading.
           tags: [coding, research]
       extendedSkills:                             # authenticated peers only
         - id: internal
           name: internal diagnostics
-          description: Reports harness internals.
+          description: Explains project documentation from the authorized directory.
           tags: [internal]
       provider:
         organization: Example Inc.
@@ -233,7 +253,7 @@ another peer answers exactly as an absent one.
 | `rateLimitPerMinute` | `60` | Sliding window per identity |
 | `maxContextTurns` | `5` | Messages accepted per context before `rejected` |
 | `sendMode` | `block` | Default when the client sends no `returnImmediately` |
-| `blockTimeoutMs` | `60000` | After which a blocking request is declined |
+| `blockTimeoutMs` | `60000` | Maximum blocking wait; returns the current task on timeout so the client can poll |
 | `contextIdleTtlMs` | `1800000` | Idle time before a context's agent is released |
 | `maxResidentContexts` | `64` | Ceiling on resident contexts |
 | `maxConcurrentTasks` / `maxConcurrentTasksPerPeer` | `8` / `2` | Atomic task admission; excess requests receive 429 |
@@ -272,7 +292,8 @@ peers:
 
 ```yaml
 # ~/.dsh/.credentials.yaml
-A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
+refs:
+  A2A_PEER_ALICE: <32-byte-hex-from-openssl-rand>
 ```
 
 `ctx.credentials` resolves the reference per request across four layers — the
@@ -310,7 +331,7 @@ links and Windows alternate data streams are rejected. No shell is invoked.
 Owner RPC uses the same `/a2a` path on **local IPC**, authenticated with the admin
 token. It retains the standard caretaker preset. The public HTTP listener accepts
 only visitor credentials and never mounts the monitoring API. See the
-[migration and deployment notes](docs/public-access-hardening.md).
+[migration and deployment notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-access-hardening.en.md).
 
 ## Boundaries
 
@@ -355,6 +376,10 @@ src/
 ├── tasks.ts           task slots and the three-stage turn correlation
 ├── projection.ts      the a2aTask fold over the session log
 ├── security.ts        authentication, rate limiting, defanging, redaction
+├── workspace-read.ts  bounded read_file within the authorized data root
+├── management.ts      private owner RPC and monitoring over local IPC
+├── state.ts           durable task and conversation checkpoints
+├── briefing.ts        hourly briefing updates and persistent scheduling
 ├── config.ts          schema plus the cross-field checks that fail at load
 └── types.ts           declaration merges into SessionEventMap / MessageSourceMap
 ```
@@ -370,7 +395,8 @@ carries the committed output, so the fold serves the answer without reaching
 back into message history.
 
 **Residency is explicit.** HTTP has no connection lifetime, so each `contextId`
-maps to an Activation evicted when idle, leaving the durable Session behind.
+maps to an Activation evicted when idle. Private checkpoints retain task results
+and conversation history; cold restoration creates a new harness session.
 
 ## Development
 
@@ -381,6 +407,7 @@ pnpm test       # protocol, lifecycle, security and workspace-read regressions
 pnpm serve      # a listening server
 pnpm probe      # 67 checks against a running server
 pnpm build      # emit lib/
+pnpm test:package # verify imports with only declared runtime packages
 ```
 
 The end-to-end suites boot a real Cordis composition with a real agent loop and

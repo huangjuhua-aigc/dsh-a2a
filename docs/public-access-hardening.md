@@ -1,6 +1,8 @@
-# 公网访问修复与迁移
+# 0.3.0 部署与迁移指南
 
-本次修复对应 `review-2026-10-24-public-access.md` 的 9 个代码问题，同时修改了配套仓库 `D:\code\Talk2MyAgent\packages\a2a-host`。
+[English](public-access-hardening.en.md) · [简体中文](public-access-hardening.md)
+
+本指南适用于 `dsh-a2a-server@0.3.0` 和 DSH `>=0.2.1-rc.2 <0.3.0`。需要配置界面时使用配套 [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent)；纯插件配置见 [README](../README.zh-CN.md)。修复背景见[代码审查记录](review-2026-10-24-public-access.md)。
 
 ## 权限与入口
 
@@ -35,13 +37,40 @@ SSE 断线立即释放订阅与心跳。超过缓冲上限会断开流，客户�
 
 ## 升级现有部署
 
-1. 两个仓库的修改需要一起部署。构建本插件并更新对应 DSH profile 中安装的插件；本次源代码修改不会自动替换已经运行的实例。
+1. 先停止 agent，将原有 profile 中的插件更新到 `dsh-a2a-server@0.3.0`，并更新配套 Portal。安装命令见下方；包升级不会自动替换正在运行的实例。
 2. 控制台更新后，重新保存 agent 配置，生成含 `admin.socketPath` 的 patch；再重启该 agent。旧控制台通过 HTTP 的主人/监控请求将失效。
 3. 检查访客的“允许对话和读取工作目录”勾选，尤其是此前所有 `trusted` 均为 false 的配置：升级后它会正确地拒绝所有访客。原先指定的工作目录继续作为资料目录，不必把所有资料改写成简报。
-4. 公网地址填完整 HTTPS 域名，控制台补齐 `/a2a`，并让域名模式默认绑定 127.0.0.1。隧道目标指向实际端口，例如 `http://127.0.0.1:3080`；有路径前缀时需在代理中映射回本地 `/a2a`。Tailscale/局域网直接连接须使用本机确实存在的网卡 IP；失效 IP 不会自动改绑其他网卡。
+4. 对外地址填完整 HTTPS 域名，控制台补齐 `/a2a`，域名模式默认绑定 `127.0.0.1`。代理只转发 `/a2a` 与 `/.well-known/agent-card.json`，保留真实后端路径，不转发整个 DSH Web 服务或 Portal。Tailscale 配置见下一节。局域网直接连接须使用本机确实存在的网卡 IP；失效 IP 不会自动改绑其他网卡。
 5. 状态目录默认在用户主目录的 `.dsh-a2a` 下，包含会话文本，应使用当前系统账户的私有目录。同一状态目录禁止多进程同时使用。备份和日志也按私人数据处理。
 
-本次没有发布 npm 包、改写已保存的真实凭据、重启正在运行的服务或配置公网隧道。现有 DSH 中文流解码缺陷的孤立代理项防护继续保留。
+```sh
+dsh plugin --profile YOUR_PROFILE add dsh-a2a-server@0.3.0
+```
+
+用保存的实际 profile 名称替换 `YOUR_PROFILE`。升级时不要使用 `--from-default-profile`，避免重建已有配置。主人 HTTP 集成必须切换到本机 IPC；升级后重启并验证访客身份、文件读取、正式简报和监控。现有 DSH 中文流解码缺陷的孤立代理项防护继续保留。
+
+## 用 Tailscale 跨网络接入
+
+运行 agent 的主机和发起 A2A 请求的设备都安装并连接 Tailscale，加入同一 tailnet，或将主机共享给指定访客。采用 Tailscale Serve 时，不同 Wi-Fi、公司网络或手机热点上的获准设备也能访问；仍需访客令牌。[完整中文教程](https://github.com/huangjuhua-aigc/Talk2MyAgent/blob/main/docs/tailscale.md)
+
+先让 agent 在本机 `127.0.0.1:3080` 正常运行，再在主机执行：
+
+```sh
+tailscale serve status
+tailscale serve --bg --https=443 --set-path=/a2a http://127.0.0.1:3080/a2a
+tailscale serve --bg --https=443 --set-path=/.well-known/agent-card.json http://127.0.0.1:3080/.well-known/agent-card.json
+tailscale serve status
+```
+
+如果已有服务占用 443，按完整教程选择其他端口，不覆盖旧规则。保留两个目标 URL 的路径后缀。将实际 HTTPS 域名填回 Portal，保存并重启；从另一网络的访客设备验证名片中的 `supportedInterfaces` URL、带令牌的 A2A 对话以及授权文件读取。Tailscale Serve 只对获准设备开放；Funnel 是另一种公网发布方式，本教程不启用它。[Serve 官方说明](https://tailscale.com/docs/features/tailscale-serve)
+
+## 自动简报
+
+Portal 创建的 agent 默认开启每小时简报更新。维护指令从相关项目记忆生成公开摘要，完成后直接更新 `.hop/handoff.md`；Portal 显示内容、更新时间和一个开关，没有任务列表和草稿审核。
+
+关闭开关停止后续执行，已有简报保留，已经开始的一次允许完成。关闭 Portal 后在线 agent 仍继续更新；停机期间不会执行，重新上线只补一次到期更新。新访客会话自动加载最新正式简报，已有会话不会重新注入。生成质量取决于配置的模型。
+
+单独使用插件时，自动简报需要配置 `briefing.prompt`、绝对路径的 `briefing.settingsFile` 和主人管理凭据。仅安装包不会自动读取项目记忆或创建更新任务。
 
 ## 验证
 
