@@ -23,10 +23,9 @@
           skills: []
         peers: {}
         isolation:
-          # Default posture is isolation: each peer gets its own working
-          # directory, which also makes the cwd-equality authority in
-          # cross-session tooling separate peers for free. A deployment whose
-          # peers collaborate on one repository must say so explicitly.
+          # Each peer gets its own working directory. This is not a filesystem
+          # sandbox: read_file separately restricts reads to the selected root,
+          # or to a peerWorkspaces override. Other visitor tools are disabled.
           # This placeholder is overridden by any real deployment layer (the
           # console's overlay sets it per agent); supply an absolute path.
           workspaceMode: per-peer

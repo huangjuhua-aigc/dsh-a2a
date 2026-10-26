@@ -1,11 +1,6 @@
 /**
- * The loopback monitoring surface.
- *
- * Two gates are pinned here: every response requires the admin token, and the
- * connection must come from loopback. The tests connect from 127.0.0.1 (the
- * composition binds loopback), so they exercise the token gate and the data
- * shape; the loopback rejection is covered at the unit level by the address
- * check being an allow-list, not a deny-list.
+ * Local IPC monitoring: token gates and data shape. Public HTTP rejection is
+ * exercised separately in hardening.spec.ts, including loopback proxy traffic.
  */
 
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -13,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { compose, type Composition } from '../example/compose.ts'
+import { ipc } from './ipc.ts'
 
 const ALICE_TOKEN = 'tok-alice-admin'
 const ADMIN_TOKEN = 'tok-admin-monitor'
@@ -39,11 +35,7 @@ async function send(text: string): Promise<Record<string, any>> {
 }
 
 async function getAdmin(path: string, token: string | undefined): Promise<{ status: number; body: Record<string, any> }> {
-  const response = await fetch(`${app!.rpcUrl}/admin/${path}`, {
-    headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
-  })
-  const text = await response.text()
-  return { status: response.status, body: text.length > 0 ? JSON.parse(text) as Record<string, any> : {} }
+  return ipc(app!.managementSocket, `/a2a/admin/${path}`, token)
 }
 
 beforeEach(async () => {
@@ -79,10 +71,7 @@ describe('the admin surface gates', () => {
   })
 
   it('refuses anything but GET', async () => {
-    const response = await fetch(`${app!.rpcUrl}/admin/contexts`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
-    })
+    const response = await ipc(app!.managementSocket, '/a2a/admin/contexts', ADMIN_TOKEN, 'POST')
     expect(response.status).toBe(405)
   })
 })

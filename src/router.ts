@@ -47,7 +47,7 @@ import {
 } from './protocol/index.ts'
 import type { A2AServerConfig } from './config.ts'
 import type { Activation, ContextRegistry } from './contexts.ts'
-import { filterInbound, redactOutbound, type PeerIdentity, type RateLimiter, type TurnTracker } from './security.ts'
+import { constantTimeEqual, filterInbound, redactOutbound, type PeerIdentity, type RateLimiter, type TurnTracker } from './security.ts'
 import type { TaskSlot, TaskSettlement } from './tasks.ts'
 
 /** Largest request body accepted, before parsing. */
@@ -67,9 +67,8 @@ export interface RouterDeps {
   resolvePeerSecrets: () => Promise<Map<PeerIdentity, string>>
   /**
    * Resolve the deployment owner's token, per request. The owner is the
-   * console on this machine: it never appears in the peers table, is exempt
-   * from the rate limit and turn cap, and runs the caretaker context (its
-   * writable scope is the briefing directory, not the workspace itself).
+   * console on this machine: accepted only on IPC, never in the peers table.
+   * It retains the caretaker preset and bypasses only the visitor turn cap.
    */
   resolveOwnerSecret?: (() => Promise<string | undefined>) | undefined
   identify: (token: string | undefined, secrets: ReadonlyMap<PeerIdentity, string>) => PeerIdentity | undefined
@@ -77,6 +76,10 @@ export interface RouterDeps {
   /** The authenticated extended card, or undefined when none is configured. */
   extendedCardFor: (hostHeader: string | undefined) => A2AAgentCard | undefined
   createActivation: (peer: PeerIdentity) => Promise<Activation>
+  releaseActivation: (activation: Activation) => void
+  restoreActivation: (id: string, peer: PeerIdentity) => Promise<Activation | undefined>
+  retainedTasks: (peer: PeerIdentity) => A2ATask[]
+  reserveTask: (peer: PeerIdentity) => () => void
   submit: (activation: Activation, text: string, peer: PeerIdentity) => Promise<TaskSlot>
   cancel: (activation: Activation, slot: TaskSlot) => void
   taskSnapshot: (
@@ -137,11 +140,9 @@ export interface AdminSnapshot {
   contexts: AdminContextView[]
 }
 
-/** Addresses the monitoring surface accepts a connection from, and only those. */
-const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
-
 /** One live SSE subscription. */
 interface StreamChannel {
+  cleanup: () => void
   res: ServerResponse
   id: string | number | null
   taskId: A2ATaskId
@@ -152,7 +153,8 @@ interface StreamChannel {
 export interface Router {
   serveCard: (req: IncomingMessage, res: ServerResponse) => void
   serveRpc: (req: IncomingMessage, res: ServerResponse) => Promise<void>
-  /** The loopback-only monitoring surface under `{basePath}/admin/`. */
+  serveOwnerRpc: (req: IncomingMessage, res: ServerResponse) => Promise<void>
+  /** The local-IPC monitoring surface under `{basePath}/admin/`. */
   serveAdmin: (req: IncomingMessage, res: ServerResponse) => Promise<void>
   /** Send every open stream its terminal frame, then end it. */
   closeStreams: () => void
@@ -221,7 +223,7 @@ export function createRouter(deps: RouterDeps): Router {
     sendJson(res, 200, deps.cardFor(req.headers.host))
   }
 
-  const serveRpc = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  const serveRpc = async (req: IncomingMessage, res: ServerResponse, ownerChannel = false): Promise<void> => {
     if (req.method !== 'POST') {
       sendJson(res, 405, jsonRpcError(null, ERR_INVALID_REQUEST, 'method not allowed'))
       return
@@ -236,13 +238,14 @@ export function createRouter(deps: RouterDeps): Router {
       // The owner's token wins before the visitor table, so a visitor named
       // "owner" can never shadow the console's identity.
       const ownerSecret = await deps.resolveOwnerSecret?.()
-      if (presented !== undefined && ownerSecret !== undefined && presented === ownerSecret) {
+      if (ownerChannel && presented !== undefined && ownerSecret !== undefined && constantTimeEqual(presented, ownerSecret)) {
         peer = 'owner'
-      } else {
+      } else if (!ownerChannel && !(presented !== undefined && ownerSecret !== undefined && constantTimeEqual(presented, ownerSecret))) {
         peer = deps.identify(presented, await deps.resolvePeerSecrets())
       }
     } catch (error: unknown) {
-      sendJson(res, 503, jsonRpcError(null, ERR_INVALID_REQUEST, String(error)))
+      deps.logger.warn(`a2a: credential resolution failed: ${String(error)}`)
+      sendJson(res, 503, jsonRpcError(null, ERR_INVALID_REQUEST, 'authentication unavailable'))
       return
     }
 
@@ -250,13 +253,13 @@ export function createRouter(deps: RouterDeps): Router {
       sendAuthFailure(res, 401, 'unauthorized')
       return
     }
-    if (peer !== 'owner' && !deps.rateLimiter.allow(peer)) {
+    if (!deps.rateLimiter.allow(peer)) {
       sendAuthFailure(res, 429, 'rate limit exceeded')
       return
     }
     // The owner bypasses the visitor allow list: the console IS the trust.
     if (peer !== 'owner'
-      && config.trustedPeers !== undefined && config.trustedPeers.length > 0
+      && config.trustedPeers !== undefined
       && !config.trustedPeers.includes(peer)) {
       sendAuthFailure(res, 403, `peer "${peer}" is not trusted`)
       return
@@ -355,6 +358,10 @@ export function createRouter(deps: RouterDeps): Router {
   ): Promise<Activation> => {
     if (rawContextId === undefined) return deps.createActivation(peer)
     const found = deps.contexts.lookup(A2AContextId(rawContextId), peer)
+    if (found === 'unknown') {
+      const restored = await deps.restoreActivation(rawContextId, peer)
+      if (restored !== undefined) return restored
+    }
     if (found === 'unknown' || found === 'forbidden') {
       throw new A2ARpcError(ERR_INVALID_PARAMS, `unknown contextId: ${rawContextId}`)
     }
@@ -406,9 +413,9 @@ export function createRouter(deps: RouterDeps): Router {
 
   /** The current wire shape of an in-flight task. */
   const liveTask = (activation: Activation, slot: TaskSlot): A2ATask => {
-    const state: A2ATaskState = slot.turn === undefined
+    const state: A2ATaskState = slot.forcedState ?? (slot.turn === undefined
       ? 'TASK_STATE_SUBMITTED'
-      : 'TASK_STATE_WORKING'
+      : 'TASK_STATE_WORKING')
     return deps.taskSnapshot(activation, slot, state, redactArtifacts(
       slot.texts.length > 0
         ? [{
@@ -441,6 +448,8 @@ export function createRouter(deps: RouterDeps): Router {
         return { ...projected, artifacts: redactArtifacts(projected.artifacts ?? []) }
       }
     }
+    const retained = deps.retainedTasks(peer).find(task => task.id === taskId)
+    if (retained !== undefined) return { ...retained, artifacts: redactArtifacts(retained.artifacts ?? []) }
     throw taskNotFound(taskId)
   }
 
@@ -462,6 +471,14 @@ export function createRouter(deps: RouterDeps): Router {
         if (raw.trim().length === 0) {
           throw new A2ARpcError(ERR_INVALID_PARAMS, 'message carries no readable content')
         }
+        if (raw.length > config.maxInputChars) throw new A2ARpcError(ERR_INVALID_PARAMS, 'message exceeds input limit', { httpStatus: 413 })
+        if (operation === 'stream' && streams.size >= config.maxConcurrentTasks * config.maxStreamsPerTask) {
+          throw new A2ARpcError(ERR_INVALID_REQUEST, 'stream capacity reached', { httpStatus: 429 })
+        }
+        const release = deps.reserveTask(peer)
+        let handedOff = false
+        let selected: Activation | undefined
+        try {
 
         // A message may address a context directly, or name a task and let the
         // server infer the context from it. A task that already settled cannot
@@ -469,6 +486,9 @@ export function createRouter(deps: RouterDeps): Router {
         const activation = parsed.message.taskId === undefined
           ? await resolveContext(parsed.message.contextId, peer)
           : continueTask(parsed.message.taskId, peer)
+        selected = activation
+
+        if (activation.slots.size > 0) throw new A2ARpcError(ERR_INVALID_REQUEST, 'context already has an active task', { httpStatus: 409 })
 
         const turn = deps.turns.track(activation.contextId)
         // The owner's caretaker context is long-lived by design (scheduled
@@ -492,6 +512,8 @@ export function createRouter(deps: RouterDeps): Router {
         }
 
         const slot = await deps.submit(activation, filterInbound(raw), peer)
+        slot.onSettled(release)
+        handedOff = true
 
         if (operation === 'stream') {
           openStream(res, id, slot, activation)
@@ -524,6 +546,10 @@ export function createRouter(deps: RouterDeps): Router {
         // and the member name is what tells them apart.
         sendJson(res, 200, jsonRpcResult(id, { task }))
         return
+        } finally {
+          if (selected) deps.releaseActivation(selected)
+          if (!handedOff) release()
+        }
       }
 
       case 'get': {
@@ -628,9 +654,7 @@ export function createRouter(deps: RouterDeps): Router {
   /**
    * List the tasks this peer may see, newest first.
    *
-   * Scope is the RESIDENT contexts: a context evicted for idleness takes its
-   * task list with it, because nothing in this plugin indexes sessions outside
-   * the registry. `GetTask` has the same horizon, so the two agree.
+   * Scope includes live slots and retained checkpoints, always peer-owned.
    * @param filters - the parsed `ListTasks` parameters.
    * @param peer - the authenticated identity.
    * @returns one page of results plus its cursor.
@@ -648,6 +672,13 @@ export function createRouter(deps: RouterDeps): Router {
         // A live slot is authoritative over its own projected row.
         if (activation.slots.has(projected.id)) continue
         collected.push({ ...projected, artifacts: redactArtifacts(projected.artifacts ?? []) })
+      }
+    }
+
+    const existing = new Set(collected.map(task => task.id))
+    for (const task of deps.retainedTasks(peer)) {
+      if (!existing.has(task.id) && (filters.contextId === undefined || task.contextId === filters.contextId)) {
+        collected.push({ ...task, artifacts: redactArtifacts(task.artifacts ?? []) })
       }
     }
 
@@ -693,24 +724,51 @@ export function createRouter(deps: RouterDeps): Router {
     slot: TaskSlot,
     activation: Activation,
   ): void => {
+    if ([...streams].filter(channel => channel.taskId === slot.taskId).length >= config.maxStreamsPerTask) {
+      throw new A2ARpcError(ERR_INVALID_REQUEST, 'task subscription limit reached', { httpStatus: 429 })
+    }
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       connection: 'keep-alive',
+      'x-accel-buffering': 'no',
     })
     const channel: StreamChannel = {
-      res, id, taskId: slot.taskId, contextId: activation.contextId,
+      res, id, taskId: slot.taskId, contextId: activation.contextId, cleanup: () => {},
     }
     streams.add(channel)
+    let unsubscribe = (): void => {}
+    const cleanup = (): void => {
+      streams.delete(channel)
+      clearInterval(heartbeat)
+      unsubscribe()
+      res.off('close', cleanup)
+      res.off('error', cleanup)
+    }
+    const write = (frame: string): boolean => {
+      if (!streams.has(channel) || res.destroyed) { cleanup(); return false }
+      if (res.writableLength + Buffer.byteLength(frame) > config.maxStreamBufferBytes) {
+        cleanup(); res.destroy(); return false
+      }
+      try { res.write(frame) } catch { cleanup(); res.destroy(); return false }
+      return true
+    }
+    const heartbeat = setInterval(() => {
+      if (res.writableLength === 0) write(': heartbeat\n\n')
+    }, config.streamHeartbeatMs)
+    heartbeat.unref()
+    channel.cleanup = cleanup
+    res.once('close', cleanup)
+    res.once('error', cleanup)
 
     // v1.0 requires the Task object itself as the first frame, so a subscriber
     // never has to call GetTask to learn where the task stood when it joined.
-    res.write(sseFrame(id, streamTask(liveTask(activation, slot))))
+    if (!write(sseFrame(id, streamTask(liveTask(activation, slot))))) return
 
-    void slot.settled.then((settlement: TaskSettlement) => {
+    unsubscribe = slot.onSettled((settlement: TaskSettlement) => {
       if (!streams.has(channel)) return
       redactArtifacts(settlement.artifacts).forEach((artifact, index) => {
-        res.write(sseFrame(id, streamArtifactUpdate({
+        write(sseFrame(id, streamArtifactUpdate({
           taskId: slot.taskId,
           contextId: activation.contextId,
           artifact,
@@ -718,12 +776,12 @@ export function createRouter(deps: RouterDeps): Router {
           lastChunk: true,
         })))
       })
-      res.write(sseFrame(id, streamStatusUpdate({
+      write(sseFrame(id, streamStatusUpdate({
         taskId: slot.taskId,
         contextId: activation.contextId,
         status: { state: settlement.state, timestamp: nowIso() },
       })))
-      streams.delete(channel)
+      cleanup()
       // v1.0 dropped the `final` flag: closing the stream IS the terminal
       // signal, so the close must follow the terminal status immediately.
       res.end()
@@ -734,8 +792,8 @@ export function createRouter(deps: RouterDeps): Router {
    * Serve the monitoring surface: GET `{basePath}/admin/contexts` and
    * `{basePath}/admin/contexts/<contextId>`.
    *
-   * Two gates, both required: the connection must originate from loopback, and
-   * the request must carry the configured admin token. The body of a failure is
+   * The carrier must be local IPC and the request must carry the admin token.
+   * The body of a failure is
    * plain JSON, not a JSON-RPC envelope — this surface is not A2A.
    */
   const serveAdmin = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -753,24 +811,14 @@ export function createRouter(deps: RouterDeps): Router {
         fail(405, 'method_not_allowed', 'the admin surface is read-only')
         return
       }
-      // The loopback check is a hard boundary, not authentication: the token
-      // alone must never be enough, because this surface shows every visitor's
-      // words and could be reached through a forwarded port otherwise. A
-      // server bound to a LAN address is reached over that address from this
-      // same machine (remote equals local), which is local traffic too.
-      const remote = req.socket.remoteAddress ?? ''
-      const local = req.socket.localAddress ?? ''
-      if (!LOOPBACK_ADDRESSES.has(remote) && remote !== local) {
-        fail(403, 'not_loopback', 'the admin surface accepts local connections only')
-        return
-      }
+      // This handler is registered exclusively on the local IPC listener.
       const expected = await deps.resolveOwnerSecret?.()
       if (expected === undefined) {
         fail(401, 'admin_token_unconfigured', 'admin.tokenEnv resolves to no credential')
         return
       }
       const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]
-      if (presented !== expected) {
+      if (presented === undefined || !constantTimeEqual(presented, expected)) {
         fail(401, 'unauthorized', 'a valid admin token is required')
         return
       }
@@ -794,12 +842,14 @@ export function createRouter(deps: RouterDeps): Router {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(view))
     } catch (error: unknown) {
-      fail(500, 'internal', String(error))
+      deps.logger.error(`a2a: admin request failed: ${String(error)}`)
+      fail(500, 'internal', 'internal error')
     }
   }
 
   const closeStreams = (): void => {
     for (const channel of streams) {
+      channel.cleanup()
       try {
         channel.res.write(sseFrame(channel.id, streamStatusUpdate({
           taskId: channel.taskId,
@@ -814,7 +864,7 @@ export function createRouter(deps: RouterDeps): Router {
     streams.clear()
   }
 
-  return { serveCard, serveRpc, serveAdmin, closeStreams }
+  return { serveCard, serveRpc, serveOwnerRpc: (req, res) => serveRpc(req, res, true), serveAdmin, closeStreams }
 }
 
 /**

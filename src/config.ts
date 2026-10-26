@@ -11,6 +11,7 @@
  */
 
 import Schema from '@deepseek-ai/schemastery'
+import { isAbsolute } from 'node:path'
 
 /** A credential reference name: the shape `ctx.credentials` addresses. */
 const CREDENTIAL_REF = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -24,26 +25,16 @@ export interface PeerConfig {
   tokenEnv: string
 }
 
-/**
- * How peers are kept from reaching each other.
- *
- * DEFERRED — a tool deny-list (`session_search`, `session_event_search`,
- * `session_trace`, `session_event_trace`, `session_event_read`, `list_agents`)
- * plus a named `unsafeAllowCrossSessionSearch` escape hatch for single-peer
- * deployments. Both were designed as defense in depth behind `workspaceMode`,
- * and neither is declared here until it is enforced: a security knob that
- * silently does nothing is worse than no knob at all.
- */
+/** Working directories and the data roots exposed through the scoped reader. */
 export interface IsolationConfig {
   /**
-   * `per-peer` gives each identity its own cwd, which also makes the existing
-   * cwd-equality authority in cross-session tooling isolate them for free.
-   * `shared` is the collaborative posture and must be chosen deliberately.
+   * `per-peer` gives each identity its own cwd. Neither mode is a filesystem
+   * security boundary. read_file enforces its own canonical data-root boundary.
    */
   workspaceMode: 'per-peer' | 'shared'
-  /** Parent directory in `per-peer` mode; the common cwd in `shared` mode. */
+  /** Shared read-only data root; also the cwd parent in `per-peer` mode. */
   workspaceRoot: string
-  /** Per-peer cwd overrides, e.g. pointing one trusted peer at a real repo. */
+  /** Overrides both a peer's cwd and its authorized read root. */
   peerWorkspaces: Record<string, string>
 }
 
@@ -101,7 +92,7 @@ export interface PushConfig {
  * spared, and the turn counters stay about the visitor's messages only.
  */
 export interface PreambleConfig {
-  /** Paths relative to the peer workspace (absolute paths pass through). */
+  /** Publication-safe paths relative to the workspace root; absolute paths pass through. */
   files: string[]
 }
 
@@ -112,6 +103,8 @@ export interface AdminConfig {
    * Empty or absent means the monitoring surface stays unmounted.
    */
   tokenEnv: string
+  /** Local named pipe / Unix socket. Never served on the public HTTP carrier. */
+  socketPath?: string
 }
 
 /** The whole plugin configuration. */
@@ -135,11 +128,24 @@ export interface A2AServerConfig {
   blockTimeoutMs: number
   contextIdleTtlMs: number
   maxResidentContexts: number
+  maxConcurrentTasks: number
+  maxConcurrentTasksPerPeer: number
+  maxTasksPerPeerPerDay: number
+  taskTimeoutMs: number
+  maxModelCallsPerTask: number
+  maxOutputTokens: number
+  maxInputChars: number
+  maxOutputChars: number
+  streamHeartbeatMs: number
+  maxStreamsPerTask: number
+  maxStreamBufferBytes: number
+  storage: { directory?: string; retentionMs: number; maxContexts: number; maxContextBytes: number }
   isolation: IsolationConfig
   preamble: PreambleConfig
+  /** Optional Portal-managed automatic updates; omission leaves the transport inert. */
+  briefing?: { settingsFile: string; prompt: string }
   /**
-   * When set, a loopback-only read-only monitoring endpoint is served under
-   * `{basePath}/admin/`. Absent means no admin surface at all.
+   * Enables owner RPC and monitoring on private local IPC, never public HTTP.
    */
   admin?: AdminConfig
   push: PushConfig
@@ -151,10 +157,7 @@ export interface A2AServerConfig {
  * - `streamGranularity: 'message' | 'chunk'` — streaming currently emits only
  *   committed assistant messages. The `chunk` mode needs an `assistant/chunk`
  *   subscription and a decision about retried text reaching a peer.
- * - `taskTimeoutMs` — the orphan-task watchdog that would fail a task stuck
- *   non-terminal. Nothing sweeps for those yet.
- *
- * Both were in the design; neither is wired. They return with their code.
+ * This option returns with its implementation.
  */
 
 export const Config: Schema<A2AServerConfig> = Schema.object({
@@ -191,7 +194,8 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
   peers: Schema.dict(Schema.object({
     tokenEnv: Schema.string().required(),
   })).default({}),
-  trustedPeers: Schema.array(Schema.string()),
+  // An array schema implicitly defaults to []; the wrapper preserves omission.
+  trustedPeers: Schema.union([Schema.array(Schema.string())]),
   rateLimitPerMinute: Schema.natural().default(60),
   maxContextTurns: Schema.natural().default(5),
 
@@ -199,6 +203,23 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
   blockTimeoutMs: Schema.natural().default(60_000),
   contextIdleTtlMs: Schema.natural().default(1_800_000),
   maxResidentContexts: Schema.natural().default(64),
+  maxConcurrentTasks: Schema.natural().default(8),
+  maxConcurrentTasksPerPeer: Schema.natural().default(2),
+  maxTasksPerPeerPerDay: Schema.natural().default(200),
+  taskTimeoutMs: Schema.natural().default(120_000),
+  maxModelCallsPerTask: Schema.natural().default(8),
+  maxOutputTokens: Schema.natural().default(4096),
+  maxInputChars: Schema.natural().default(32_000),
+  maxOutputChars: Schema.natural().default(64_000),
+  streamHeartbeatMs: Schema.natural().default(15_000),
+  maxStreamsPerTask: Schema.natural().default(4),
+  maxStreamBufferBytes: Schema.natural().default(262_144),
+  storage: Schema.object({
+    directory: Schema.string(),
+    retentionMs: Schema.natural().default(86_400_000),
+    maxContexts: Schema.natural().default(256),
+    maxContextBytes: Schema.natural().default(4_000_000),
+  }),
 
   isolation: Schema.object({
     workspaceMode: Schema.union(['per-peer', 'shared'] as const).default('per-peer'),
@@ -210,12 +231,18 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
     files: Schema.array(Schema.string()).default(['.hop/handoff.md']),
   }),
 
+  briefing: Schema.object({
+    settingsFile: Schema.string().default(''),
+    prompt: Schema.string().default(''),
+  }),
+
   // Schemastery instantiates a nested object even when the deployment omits
   // it, so `required()` here would make every admin-less config fail at load.
   // An empty tokenEnv instead reads as "not configured", and the coherence
   // check below is what keeps a non-empty one a valid REFERENCE name.
   admin: Schema.object({
     tokenEnv: Schema.string().default(''),
+    socketPath: Schema.string(),
   }),
 
   push: Schema.object({
@@ -241,6 +268,28 @@ export class A2AConfigError extends Error {
  * @throws {A2AConfigError} when a peer name, credential reference, or path is unusable.
  */
 export function assertConfigCoherent(config: A2AServerConfig): void {
+  if (config.briefing?.prompt || config.briefing?.settingsFile) {
+    if (!config.admin?.tokenEnv || !config.briefing.prompt.trim() || !isAbsolute(config.briefing.settingsFile)) {
+      throw new A2AConfigError('automatic briefing requires owner administration, a prompt, and an absolute settingsFile')
+    }
+  }
+  for (const key of ['maxResidentContexts', 'maxConcurrentTasks', 'maxConcurrentTasksPerPeer',
+    'maxTasksPerPeerPerDay', 'taskTimeoutMs', 'maxModelCallsPerTask', 'maxOutputTokens',
+    'maxInputChars', 'maxOutputChars', 'streamHeartbeatMs', 'maxStreamsPerTask',
+    'maxStreamBufferBytes'] as const) {
+    if (!Number.isSafeInteger(config[key]) || config[key] <= 0) throw new A2AConfigError(`${key} must be positive`)
+  }
+  for (const [key, value] of Object.entries(config.storage)) {
+    if (key !== 'directory' && (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)) {
+      throw new A2AConfigError(`storage.${key} must be positive`)
+    }
+  }
+  if (config.publicUrl !== undefined) {
+    const url = new URL(config.publicUrl)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new A2AConfigError('publicUrl must be an HTTP(S) RPC URL without credentials, query, or fragment')
+    }
+  }
   for (const [peer, entry] of Object.entries(config.peers)) {
     if (peer === 'owner') {
       throw new A2AConfigError('peer name "owner" is reserved for the deployment owner (the local console)')

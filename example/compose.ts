@@ -12,6 +12,10 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { managementPath } from '../src/management.ts'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
@@ -25,6 +29,7 @@ import type { A2AServerConfig } from '../src/index.ts'
 
 /** What a booted composition hands back. */
 export interface Composition {
+  managementSocket: string
   ctx: Context
   /** The port the HTTP carrier actually bound (0 asks the OS to choose). */
   port: number
@@ -42,6 +47,8 @@ export interface Composition {
 
 /** Knobs the caller varies between the demo and the tests. */
 export interface ComposeOptions {
+  /** Resource and retention limits used by regression tests and custom demos. */
+  overrides?: Partial<A2AServerConfig>
   /** Bind port; 0 lets the OS pick, which is what tests want. */
   port?: number
   /** Workspace root for per-peer directories. */
@@ -122,13 +129,13 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const model = useReal
     ? { provider: DEEPSEEK_PROVIDER, id: DEEPSEEK_MODEL, real: true }
     : { provider: ECHO_PROVIDER, id: ECHO_MODEL, real: false }
-  // The durable task read model: without it, GetTask cannot answer once a
-  // task settles, and a polling peer never learns its result. The 0.2
-  // testkit mounts the projection registry as a loop prerequisite, so it is
-  // already active by this point.
+  // The testkit includes session projections. The transport also owns bounded
+  // checkpoints so task queries remain available after eviction and restart.
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: options.port ?? 0 })
 
-  const config: A2AServerConfig = {
+  const testState = options.forceStub && !options.overrides?.storage?.directory
+    ? await mkdtemp(join(tmpdir(), 'dsh-a2a-state-')) : undefined
+  const config = A2AServer.Config({
     basePath: '/a2a',
     provider: model.provider,
     model: model.id,
@@ -169,8 +176,14 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
     preamble: { files: options.preambleFiles ?? ['.hop/handoff.md'] },
     ...options.adminTokenEnv === undefined ? {} : { admin: { tokenEnv: options.adminTokenEnv } },
     push: { enabled: false },
+    ...testState ? { storage: { directory: testState } } : {},
+    ...options.overrides,
+  } as A2AServerConfig)
+  try { await ctx.plugin(A2AServer, config) } catch (error) {
+    await ctx.fiber.dispose()
+    if (testState) await rm(testState, { recursive: true, force: true })
+    throw error
   }
-  await ctx.plugin(A2AServer, config)
 
   const port = ctx.webServer.port
   if (port === undefined) {
@@ -180,12 +193,16 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
   const origin = `http://127.0.0.1:${port}`
   return {
     ctx,
+    managementSocket: managementPath(config),
     adapter,
     model,
     port,
     rpcUrl: `${origin}/a2a`,
     cardUrl: `${origin}/.well-known/agent-card.json`,
-    stop: async () => { await ctx.fiber.dispose() },
+    stop: async () => {
+      await ctx.fiber.dispose()
+      if (testState) await rm(testState, { recursive: true, force: true })
+    },
   }
 }
 

@@ -95,4 +95,26 @@ describe('the host briefing', () => {
     const reply = await rpc(app!.rpcUrl, sendRequest(1, ' plain '))
     expect((reply.result.task.artifacts[0].parts[0].text as string)).not.toContain('host briefing')
   })
+
+  it('loads an updated official briefing in new conversations without reinjecting it into an existing one', async () => {
+    await mkdir(join(workspaceRoot, '.hop'), { recursive: true })
+    const path = join(workspaceRoot, '.hop', 'handoff.md')
+    await writeFile(path, '第一版正式简报')
+    const first = await rpc(app!.rpcUrl, sendRequest(1, '开始'))
+    expect(first.result.task.artifacts[0].parts[0].text).toContain('第一版正式简报')
+    await writeFile(path, '定时任务更新的第二版简报')
+    const continued = await rpc(app!.rpcUrl, sendRequest(2, '继续', first.result.task.contextId))
+    expect(continued.result.task.artifacts[0].parts[0].text).not.toContain('第二版简报')
+    const fresh = await rpc(app!.rpcUrl, sendRequest(3, '新对话'))
+    expect(fresh.result.task.artifacts[0].parts[0].text).toContain('第二版简报')
+    expect(fresh.result.task.artifacts[0].parts[0].text).not.toContain('第一版正式简报')
+  })
+
+  it('does not inject a legacy draft when no official briefing exists', async () => {
+    await mkdir(join(workspaceRoot, '.hop'), { recursive: true })
+    await writeFile(join(workspaceRoot, '.hop', 'handoff.draft.md'), 'LEGACY_DRAFT_NOT_PUBLISHED')
+    const reply = await rpc(app!.rpcUrl, sendRequest(1, '你好'))
+    expect(reply.result.task.artifacts[0].parts[0].text).not.toContain('LEGACY_DRAFT_NOT_PUBLISHED')
+    expect(reply.result.task.artifacts[0].parts[0].text).not.toContain('host briefing')
+  })
 })

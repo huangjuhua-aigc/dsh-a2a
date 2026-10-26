@@ -25,7 +25,7 @@ export interface Activation {
   readonly peer: string
   /** The resolved working directory this context's agent runs in. */
   readonly cwd: string
-  /** In-flight tasks, keyed by task id. FIFO order comes from the agent inbox. */
+  /** In-flight tasks, keyed by task id. The transport admits one per context. */
   readonly slots: Map<A2ATaskId, TaskSlot>
   /**
    * The host briefing read at activation, merged into this context's FIRST
@@ -88,6 +88,8 @@ export class ContextRegistry {
    * @param activation - the Activation to hold.
    */
   add(activation: Activation): void {
+    if (this.activations.has(activation.contextId)) throw new Error('context is already resident')
+    if (this.activations.size >= this.maxResident) throw new Error('resident context capacity reached')
     this.activations.set(activation.contextId, activation)
   }
 
@@ -113,22 +115,12 @@ export class ContextRegistry {
    * Select Activations that may be evicted right now.
    *
    * An Activation is evictable only when nothing is owed: no in-flight task and
-   * no recent touch. A context over the resident ceiling is evicted by least
-   * recent touch — but a busy context is NEVER evicted to make room, because
-   * dropping work a peer is waiting on is worse than exceeding a soft ceiling.
+   * no recent touch. Admission separately evicts the oldest quiet activation
+   * BEFORE creating a new agent. A busy context is never evicted for capacity.
    * @returns Activations the caller should dispose and remove.
    */
   evictable(): Activation[] {
     const cutoff = this.now() - this.idleTtlMs
-    const quiet = this.values().filter(a => a.slots.size === 0)
-    const expired = quiet.filter(a => a.lastTouchedAt <= cutoff)
-    if (this.activations.size <= this.maxResident) return expired
-
-    const overflow = this.activations.size - this.maxResident
-    const byOldest = quiet
-      .filter(a => !expired.includes(a))
-      .sort((a, b) => a.lastTouchedAt - b.lastTouchedAt)
-      .slice(0, Math.max(0, overflow - expired.length))
-    return [...expired, ...byOldest]
+    return this.values().filter(a => a.slots.size === 0 && a.lastTouchedAt <= cutoff)
   }
 }

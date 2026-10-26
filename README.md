@@ -123,14 +123,14 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent-card.json` | GET | Public by default |
 | `/.well-known/agent.json` | GET | Public by default |
 | `{basePath}` (default `/a2a`) | POST | Bearer required |
-| `{basePath}/admin`, `{basePath}/admin/contexts[/<id>]` | GET | Loopback connection + admin token; mounted only when `admin.tokenEnv` is set |
+| `{basePath}/admin/contexts[/<id>]` | GET | Local IPC only + admin token; never registered on public HTTP |
 
 | JSON-RPC method | Status |
 | --- | --- |
 | `SendMessage` | Waiting negotiated per request |
 | `SendStreamingMessage` | SSE |
 | `GetTask` | Idempotent; answers after settlement |
-| `ListTasks` | Cursor-paginated, filterable, resident contexts only |
+| `ListTasks` | Cursor-paginated, filterable, live and retained tasks |
 | `CancelTask` | Cancels the running turn |
 | `SubscribeToTask` | Live stream; `-32004` on a terminal task |
 | `GetExtendedAgentCard` | Extra skills for an authenticated peer; `-32007` when unconfigured |
@@ -229,18 +229,31 @@ another peer answers exactly as an absent one.
 | `card.skills` | `[]` | Declared skills; falls back to one `general` entry |
 | `card.extendedSkills` | `[]` | Skills revealed only through `GetExtendedAgentCard` |
 | `peers` | `{}` | Identity → credential **reference name** |
-| `trustedPeers` | all authenticated | Allow-list of identities that may run tasks |
+| `trustedPeers` | all authenticated | Access allow-list for conversation and scoped file reads; `[]` denies everyone |
 | `rateLimitPerMinute` | `60` | Sliding window per identity |
 | `maxContextTurns` | `5` | Messages accepted per context before `rejected` |
 | `sendMode` | `block` | Default when the client sends no `returnImmediately` |
 | `blockTimeoutMs` | `60000` | After which a blocking request is declined |
 | `contextIdleTtlMs` | `1800000` | Idle time before a context's agent is released |
 | `maxResidentContexts` | `64` | Ceiling on resident contexts |
+| `maxConcurrentTasks` / `maxConcurrentTasksPerPeer` | `8` / `2` | Atomic task admission; excess requests receive 429 |
+| `maxTasksPerPeerPerDay` | `200` | Persisted task allowance per identity per UTC day |
+| `taskTimeoutMs` | `120000` | Cancels execution when its deadline expires |
+| `maxModelCallsPerTask` / `maxOutputTokens` | `8` / `4096` | Model request and per-request output limits |
+| `maxInputChars` / `maxOutputChars` | `32000` / `64000` | Input/output text limits |
+| `streamHeartbeatMs` / `maxStreamsPerTask` | `15000` / `4` | Heartbeat interval and subscription cap |
+| `maxStreamBufferBytes` | `262144` | Disconnect a stream whose buffered frame exceeds the cap |
+| `storage.directory` | `~/.dsh-a2a/<deployment-key>` | Private checkpoints; one process per directory |
+| `storage.retentionMs` / `storage.maxContexts` | `86400000` / `256` | Retention after last activity, and maximum stored contexts |
+| `storage.maxContextBytes` | `4000000` | Maximum checkpoint bytes per context |
 | `isolation.workspaceMode` | `per-peer` | `per-peer` or `shared` |
-| `isolation.workspaceRoot` | — | Required; parent directory or shared cwd |
-| `isolation.peerWorkspaces` | `{}` | Per-identity working-directory override |
+| `isolation.workspaceRoot` | — | Required; authorized shared read-only data root and parent directory or shared cwd |
+| `isolation.peerWorkspaces` | `{}` | Per-identity cwd and authorized read-root override |
 | `preamble.files` | `[".hop/handoff.md"]` | Host briefing files (**agent-level**: resolved against the workspace root and shared by every visitor; absolute paths pass through), merged into each context's first message; absent files are skipped |
-| `admin.tokenEnv` | — | Credential reference for the loopback-only monitoring token; unset leaves the admin surface unmounted |
+| `briefing.prompt` | — | Optional single-update instruction executed as the bounded local owner at startup and hourly; configured by Portal, requires owner administration |
+| `briefing.settingsFile` | — | Absolute path to a JSON `{ "enabled": boolean }` preference; absent file means enabled, observed every 5 seconds. Disabling preserves the current briefing and lets active work finish; restart timing is persisted |
+| `admin.tokenEnv` | — | Credential reference for local owner and monitoring requests; rejected by public RPC |
+| `admin.socketPath` | deployment-specific | Windows named pipe or private Unix socket for owner RPC and monitoring |
 | `push.enabled` | `false` | Reserved; see [Boundaries](#boundaries) |
 
 Configuration is refused at load when `isolation.workspaceRoot` is absent, a peer
@@ -275,11 +288,29 @@ identities.
 | --- | --- | --- |
 | Model context | One peer's conversation cannot enter another's model request | Separate `contextId` → separate Session → separate log |
 | Protocol access | A peer cannot read, continue, or cancel another's context or task | Ownership by authenticated identity |
-| Tooling | A peer's agent cannot use tools to read another peer's session | `workspaceMode: per-peer` |
+| Tooling | Only the scoped `read_file` is available; no writes, shell, network or cross-session tools | Inherited-tool masking, scoped reader, and execution guard |
+| Prompt context | Public agents have a dedicated system prompt and suppress optional host runtime context | Scoped complete prompt and context suppression |
 
 `per-peer` (the default) derives each identity's `cwd` from `workspaceRoot`.
-`shared` places every peer in one directory, which suits peers collaborating on a
-single repository; under it, files written by one peer are readable by another.
+`shared` places every peer in one directory. These are working-directory choices,
+not filesystem sandboxes. `read_file` reads from the owner-selected
+`workspaceRoot`; a `peerWorkspaces` override restricts that peer to the overridden
+directory. Relative tool paths resolve from this **data root**, not the per-peer
+cwd. These files are available to admitted visitors, so choose the data root
+accordingly. The A2A checkpoint directory is always excluded.
+
+`read_file({"path":"."})` lists the root's entries. A file path reads UTF-8 text;
+`offset` (1-based) and `limit` page lines or directory entries. Reads are bounded
+to 2 MiB files, 32,000 returned characters and 500 lines/entries per call; directory
+scans cover at most 1,000 entries. Binary/office-document extraction is not yet
+implemented. Canonical path checks refuse escapes; symlinks, junctions, hard
+links and Windows alternate data streams are rejected. No shell is invoked.
+`preamble.files` continues to provide an optional opening briefing.
+
+Owner RPC uses the same `/a2a` path on **local IPC**, authenticated with the admin
+token. It retains the standard caretaker preset. The public HTTP listener accepts
+only visitor credentials and never mounts the monitoring API. See the
+[migration and deployment notes](docs/public-access-hardening.md).
 
 ## Boundaries
 
@@ -290,13 +321,20 @@ single repository; under it, files written by one peer are readable by another.
 - No `stateTransitionHistory`, protocol extensions, or card signatures.
 - Streaming emits committed assistant messages. Per-chunk streaming is not
   implemented.
-- No orphan-task watchdog: a task wedged non-terminal stays that way.
-- Cross-session tool denial is not implemented; isolation rests on
-  `workspaceMode`.
+- Execution deadlines cancel the agent. Admission remains occupied until the
+  underlying adapter finishes cancellation; an adapter ignoring AbortSignal
+  needs process-level supervision. These limits are not a currency budget.
+- Only rooted `read_file` is enabled for visitors. Other tools require separate
+  capability work; changing the sandbox mode does not grant those tools. This
+  application-level file reader is not an OS sandbox against a malicious local
+  administrator mutating the filesystem.
 - A token ceiling settles a task as `completed`; the real turn ending travels in
   `Task.metadata.dsh.stopReason`, which A2A's state enum cannot express.
-- Task state survives settlement but not a process restart: session persistence
-  is not composed, so the projection has no log to cold-fold after a reboot.
+- Task results and idle conversation history survive eviction/restart within
+  the retention window. Interrupted tasks become failed and are never replayed.
+  Cold restoration creates a new harness session behind the stable contextId.
+- One task may run per context; concurrent submissions receive 409. Message IDs
+  are not deduplication keys: proxies must not blindly retry submissions.
 - `ctx.webServer` provides no TLS. Any non-loopback exposure belongs behind a
   reverse proxy.
 - A configuration change restarts the plugin and cancels in-flight tasks.
@@ -339,7 +377,7 @@ maps to an Activation evicted when idle, leaving the durable Session behind.
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test       # 167 tests across 10 files
+pnpm test       # protocol, lifecycle, security and workspace-read regressions
 pnpm serve      # a listening server
 pnpm probe      # 67 checks against a running server
 pnpm build      # emit lib/

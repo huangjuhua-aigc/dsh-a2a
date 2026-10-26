@@ -45,6 +45,10 @@ export interface TaskSlot {
   settle: (settlement: TaskSettlement) => void
   /** Whether `settle` has already run. */
   done: boolean
+  /** Monotonic subscribers, removable on disconnected transports. */
+  onSettled: (listener: (settlement: TaskSettlement) => void) => () => void
+  forcedState?: A2ATaskState
+  modelCalls?: number
 }
 
 /**
@@ -56,6 +60,8 @@ export interface TaskSlot {
 export function createSlot(taskId: A2ATaskId, messageId: string): TaskSlot {
   let fulfil: ((settlement: TaskSettlement) => void) | undefined
   const settled = new Promise<TaskSettlement>((resolve) => { fulfil = resolve })
+  const listeners = new Set<(settlement: TaskSettlement) => void>()
+  let result: TaskSettlement | undefined
   const slot: TaskSlot = {
     taskId,
     messageId,
@@ -67,7 +73,18 @@ export function createSlot(taskId: A2ATaskId, messageId: string): TaskSlot {
     settle: (settlement) => {
       if (slot.done) return
       slot.done = true
+      result = settlement
       fulfil?.(settlement)
+      for (const listener of listeners) {
+        // A broken transport must not strand other subscribers or quotas.
+        try { listener(settlement) } catch { /* Each transport owns its errors. */ }
+      }
+      listeners.clear()
+    },
+    onSettled: listener => {
+      if (result !== undefined) listener(result)
+      else listeners.add(listener)
+      return () => { listeners.delete(listener) }
     },
   }
   return slot

@@ -1,8 +1,8 @@
 /**
  * Authentication, rate limiting, inbound defanging, and outbound redaction.
  *
- * The real security boundary is not in this file: it is the sandbox scope and
- * the deterministically-rejected approval an A2A agent runs under. Injection
+ * The execution boundary is the rooted read_file implementation, inherited-tool
+ * masking and a monotonic tool guard, plus a separate owner IPC. Injection
  * defanging here is noise reduction, and must never be cited as a reason to
  * widen what a peer-driven agent is allowed to do.
  *
@@ -104,6 +104,9 @@ export class RateLimiter {
 /** Per-context turn counter that stops one peer from looping a context forever. */
 export class TurnTracker {
   private readonly turns = new Map<string, number>()
+
+  get(contextId: string): number { return this.turns.get(contextId) ?? 0 }
+  restore(contextId: string, count: number): void { this.turns.set(contextId, count) }
 
   /**
    * Count one inbound message on a context.

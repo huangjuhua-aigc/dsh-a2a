@@ -76,16 +76,18 @@ describe('eviction', () => {
     expect(registry.evictable()).toEqual([])
   })
 
-  it('evicts the least recently touched when over the resident ceiling', () => {
+  it('requires explicit eviction before admitting over the resident ceiling', () => {
     let clock = 10_000
     const registry = new ContextRegistry(2, 1_000_000, () => clock)
     registry.add(activation('a', 'alice', 9_000))
     registry.add(activation('b', 'alice', 9_500))
+    expect(() => registry.add(activation('c', 'alice', 9_900))).toThrow('capacity')
+    registry.remove(A2AContextId('a'))
     registry.add(activation('c', 'alice', 9_900))
-    expect(registry.evictable().map(a => a.contextId)).toEqual(['a'])
+    expect(registry.size).toBe(2)
   })
 
-  it('exceeds the ceiling rather than dropping work a peer is waiting on', () => {
+  it('refuses additional contexts while preserving busy resident work', () => {
     let clock = 10_000
     const registry = new ContextRegistry(1, 1_000_000, () => clock)
     const busyA = activation('a', 'alice', 9_000)
@@ -93,9 +95,9 @@ describe('eviction', () => {
     const busyB = activation('b', 'alice', 9_500)
     busyB.slots.set(A2ATaskId('t2'), createSlot(A2ATaskId('t2'), 'm2'))
     registry.add(busyA)
-    registry.add(busyB)
+    expect(() => registry.add(busyB)).toThrow('capacity')
     expect(registry.evictable()).toEqual([])
-    expect(registry.size).toBe(2)
+    expect(registry.size).toBe(1)
   })
 })
 
