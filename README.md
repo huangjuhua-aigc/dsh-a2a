@@ -446,3 +446,6 @@ If the code has expired, open an issue and we will refresh it.
 ## License
 
 MIT
+## Public relay integration
+
+Talk2MyAgent Portal now supports automatic relay registration, a background Connector, publication controls and visitor invitations. This plugin continues to provide the local A2A service with its existing workspace and briefing rules. Relay is deployed independently. See [implementation and tests](docs/a2a-relay-implementation.zh-CN.md) and [Portal English guide](https://github.com/huangjuhua-aigc/Talk2MyAgent/blob/main/docs/relay.en.md).

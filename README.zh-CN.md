@@ -389,3 +389,6 @@ peer 依赖来表达：安装预检会拒绝任何插件未曾适配过的组合
 ## 许可
 
 MIT
+## 公网中继集成
+
+Talk2MyAgent Portal 已实现自动注册 Relay、后台 Connector、发布开关和访客邀请。插件仍提供本地 A2A 接口，文件权限和公开简报逻辑保持原样。中继服务单独部署；实现状态与测试命令见 [中继实现记录](docs/a2a-relay-implementation.zh-CN.md)。
