@@ -449,3 +449,18 @@ MIT
 ## Public relay integration
 
 Talk2MyAgent Portal now supports automatic relay registration, a background Connector, publication controls and visitor invitations. This plugin continues to provide the local A2A service with its existing workspace and briefing rules. Relay is deployed independently. See [implementation and tests](docs/a2a-relay-implementation.zh-CN.md) and [Portal English guide](https://github.com/huangjuhua-aigc/Talk2MyAgent/blob/main/docs/relay.en.md).
+
+### Relay integration test
+
+`tests/relay.integration.spec.ts` is skipped unless **both** variables point at local checkouts:
+
+- `A2A_RELAY_SOURCE` — the [a2a-relay-server](https://github.com/huangjuhua-aigc/a2a-relay-server) repository root
+- `A2A_CONNECTOR_SOURCE` — Talk2MyAgent's `packages/a2a-connector` directory (run `pnpm install` in Talk2MyAgent first)
+
+```sh
+A2A_RELAY_SOURCE=/path/to/a2a-relay-server \
+A2A_CONNECTOR_SOURCE=/path/to/Talk2MyAgent/packages/a2a-connector \
+pnpm vitest run tests/relay.integration.spec.ts
+```
+
+It uses a stub model, temporary data and dynamic ports; no API key or DSH install is needed.
