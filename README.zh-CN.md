@@ -392,3 +392,18 @@ MIT
 ## 公网中继集成
 
 Talk2MyAgent Portal 已实现自动注册 Relay、后台 Connector、发布开关和访客邀请。插件仍提供本地 A2A 接口，文件权限和公开简报逻辑保持原样。中继服务单独部署；实现状态与测试命令见 [中继实现记录](docs/a2a-relay-implementation.zh-CN.md)。
+
+### 中继集成测试
+
+`tests/relay.integration.spec.ts` 需要**同时**设置以下两个变量才会运行，否则跳过：
+
+- `A2A_RELAY_SOURCE`：[a2a-relay-server](https://github.com/huangjuhua-aigc/a2a-relay-server) 仓库根目录
+- `A2A_CONNECTOR_SOURCE`：Talk2MyAgent 的 `packages/a2a-connector` 目录（先在 Talk2MyAgent 执行 `pnpm install`）
+
+```sh
+A2A_RELAY_SOURCE=/path/to/a2a-relay-server \
+A2A_CONNECTOR_SOURCE=/path/to/Talk2MyAgent/packages/a2a-connector \
+pnpm vitest run tests/relay.integration.spec.ts
+```
+
+测试使用桩模型、临时数据和动态端口，无需 API 密钥或安装 DSH。
