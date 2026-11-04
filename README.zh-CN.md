@@ -34,7 +34,7 @@ subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力�
 访客读取权限、自动简报、主人 IPC 与 Tailscale 部署详见[部署与迁移指南](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-access-hardening.md)。
 
 ```sh
-dsh plugin --profile web add dsh-a2a-server@0.3.0
+dsh plugin --profile web add dsh-a2a-server@0.4.0
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
@@ -59,17 +59,19 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 `dsh-base` 中，因此 `headless` profile 需要先挂载 `@deepseek-ai/dsh-host-webserver`。
 `dsh --profile <name> --dump-config` 可以打印组合出来的配置行。
 
-### 从 0.2.x 升级
+### 升级到 0.4.0
 
-0.3.0 适配 DSH `>=0.2.1-rc.2 <0.3.0`。先停止 agent，将
-`dsh-a2a-server@0.3.0` 安装到原有 profile，再重新启动；配套 Portal 也需更新。
+0.4.0 适配 DSH `>=0.2.1-rc.2 <0.3.0`。先停止 agent，将
+`dsh-a2a-server@0.4.0` 安装到原有 profile，再重新启动；配套 Portal 也需更新。
 主人 RPC 和监控已改为需要认证的本机 IPC，公网 HTTP 不接受主人凭据。
 访客可聊天并读取授权目录，其他工具关闭；空白名单 `trustedPeers: []` 拒绝所有访客。
 任务结果与空闲会话在保留期内可跨驱逐和重启恢复。
 
 新版 [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent) 默认开启每小时简报更新，
 用一个开关控制，完成后直接写入 `.hop/handoff.md`。单独安装协议插件而未配置 `briefing`
-不会自动执行简报任务。详见 [0.3.0 发布说明](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.zh-CN.md)。
+不会自动执行简报任务。
+
+Portal 自动准备 Microsandbox，为每位访客提供独立沙箱。公共资料使用只读副本并排除 `node_modules`，私有文件保存在独立持久磁盘；空闲 30 秒暂停、10 分钟停止。独立 DSH 的旧配置保留原执行模式，安装插件本身不会自动启用 VM。详见[沙箱指南](docs/visitor-isolation.md)和 [0.4.0 发布说明](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.zh-CN.md)。
 
 ## 快速开始
 
@@ -116,7 +118,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_PEERS` | `alice` | `名字[:token]` 列表；每个 peer 都必须有 token |
 | `A2A_PORT` | `9900` | 监听端口 |
 | `A2A_SEND_MODE` | `block` | `block` 或 `immediate` |
-| `A2A_WORKSPACE_ROOT` | 临时目录 | 访客授权资料目录，同时作为 per-peer 工作目录的父目录 |
+| `A2A_WORKSPACE_ROOT` | 临时目录 | 公共资料目录；访客工作区在此目录之外 |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 向适配器请求的模型 id |
 
 一次性探针会对运行中的服务执行 67 项检查，任何一项不符即以非零码退出：
@@ -134,6 +136,7 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent.json` | GET | 默认公开 |
 | `{basePath}`（默认 `/a2a`） | POST | 必须携带 Bearer |
 | `{basePath}/admin/contexts[/<id>]` | GET | 仅本机 IPC + admin token，公网 HTTP 不挂载 |
+| `{basePath}/admin/prepare-stop` | POST | 仅本机 IPC + admin token；收尾任务、停止沙箱后确认可结束 DSH |
 
 | JSON-RPC 方法 | 状态 |
 | --- | --- |
@@ -238,9 +241,11 @@ part 是被**删除**而不是做了别名：本服务写出的每一个回包�
 | `blockTimeoutMs` | `60000` | 最长阻塞等待；到期返回任务当前状态，客户端可继续查询 |
 | `contextIdleTtlMs` | `1800000` | context 的 agent 被释放前的空闲时长 |
 | `maxResidentContexts` | `64` | 常驻 context 数量上限 |
-| `isolation.workspaceMode` | `per-peer` | `per-peer` 或 `shared` |
-| `isolation.workspaceRoot` | — | 必填；授权资料目录，同时作为访客 cwd 的父目录或共享 cwd |
-| `isolation.peerWorkspaces` | `{}` | 按身份覆盖工作目录和授权读取范围 |
+| `isolation.workspaceMode` | `per-peer` | 旧配置迁移字段；访客均使用外置私有 cwd |
+| `isolation.workspaceRoot` | — | 必填；只放公共资料 |
+| `isolation.peerWorkspaces` | `{}` | 旧版按访客覆盖读取根目录 |
+| `isolation.privateRoot` | 用户主目录下按部署分隔 | 公共资料之外的私有工作区父目录 |
+| `isolation.execution` | `read-only` | 设为 `microsandbox` 使用独立访客 VM（Portal 默认）；兼容 `docker` |
 | `preamble.files` | `[".hop/handoff.md"]` | 主人背景简报文件（**agent 级**：相对工作区根目录解析，全体访客共用一份；绝对路径直通），合并进每个 context 的首条访客消息；文件不存在则跳过 |
 | `briefing.prompt` | — | 可选的单次简报更新指令，由 Portal 配置，通过有执行预算的主人 agent 每小时运行 |
 | `briefing.settingsFile` | — | 绝对路径；读取 `{ "enabled": boolean }` 设置，缺省开启，每 5 秒检查 |
@@ -281,10 +286,10 @@ refs:
 | 工具层 | 仅提供受控 `read_file`，不开放写入、命令、联网或跨会话工具 | 屏蔽继承工具、专用读取工具、执行校验 |
 | 提示词 | 访客不继承可选的主人个性化提示与运行时上下文 | 独立的公共系统提示词 |
 
-`per-peer`（默认）依据 `workspaceRoot` 为每个身份派生独立 `cwd`；`shared` 使用同一个目录。
-这只是工作目录策略，不是文件系统沙箱。`read_file` 的读取范围默认是用户选择的
-`workspaceRoot`，有 `peerWorkspaces` 覆盖时限制为该访客的专属目录。工具相对路径从
-这个资料目录解析；插件私有状态目录始终排除。
+访客 cwd 现在放在 `workspaceRoot` 之外。所选目录只放公共资料，`read_file` 默认读取它，
+传入 `root: "workspace"` 则读取自己的私有工作区。Portal 自动准备 Microsandbox，每位访客独立 VM，
+公共资料副本只读、自己的持久化磁盘可写；空闲 30 秒暂停、10 分钟停止，文件保留，不挂后端聊天记录。
+详见[安装、迁移与隔离边界](docs/visitor-isolation.md)。
 
 `read_file({"path":"."})` 列出资料目录；文件支持 UTF-8 文本，按 `offset`/`limit`
 分页。单文件上限 2 MiB，单次最多 32000 字符、500 行/项，目录扫描最多 1000 项。

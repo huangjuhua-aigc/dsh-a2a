@@ -1,0 +1,982 @@
+{
+  "startedAt": "2026-10-30T14:56:22.288Z",
+  "name": "a2a-msb-resources-d5988a9f",
+  "hostControllerPid": 7584,
+  "settings": {
+    "cpus": 1,
+    "memoryMiB": 512,
+    "extraLivePythonMemoryMiB": 128
+  },
+  "stages": [
+    {
+      "label": "controller_only_before_vm",
+      "at": "2026-10-30T14:56:25.978Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 58179584,
+          "privateBytes": 63062016,
+          "cpuSeconds": 0.1875
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 58339328,
+          "privateBytes": 63062016,
+          "cpuSeconds": 0.203125
+        }
+      ],
+      "workingSetBytes": 58339328,
+      "privateBytes": 63062016,
+      "sampleWallSeconds": 3.6881348000000003,
+      "cpuSecondsDelta": 0.015625,
+      "percentOfOneCore": 0.42365588155834216,
+      "vmPercentOfOneCore": 0,
+      "controllerRssBytes": 58363904
+    },
+    {
+      "label": "running_idle_light",
+      "at": "2026-10-30T14:56:31.783Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 77996032,
+          "privateBytes": 74637312,
+          "cpuSeconds": 0.359375
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 139493376,
+          "privateBytes": 569909248,
+          "cpuSeconds": 0.515625
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 75382784,
+          "privateBytes": 71761920,
+          "cpuSeconds": 0.453125
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 139792384,
+          "privateBytes": 570257408,
+          "cpuSeconds": 0.625
+        }
+      ],
+      "workingSetBytes": 215175168,
+      "privateBytes": 642019328,
+      "sampleWallSeconds": 3.6541210999999993,
+      "cpuSecondsDelta": 0.203125,
+      "percentOfOneCore": 5.558792235977074,
+      "vmPercentOfOneCore": 2.9931958193722705,
+      "controllerRssBytes": 75403264,
+      "status": "running",
+      "metrics": {
+        "cpuPercent": 1.5456953048706055,
+        "vcpuTimeNs": 265625000,
+        "memoryBytes": 70557696,
+        "memoryAvailableBytes": 466313216,
+        "memoryHostResidentBytes": 70381568,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10298368,
+        "diskWriteBytes": 24576,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": 753664,
+        "upperFreeBytes": 4134502400,
+        "upperHostAllocatedBytes": 3735552,
+        "uptimeMs": 5364,
+        "timestamp": "2026-10-30T14:56:31.530Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294970130",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294970130,
+        "allocatedBytes": 4655890,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4653056
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 145,
+            "allocatedBytes": 145
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 1415,
+            "allocatedBytes": 1415
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 308,
+            "allocatedBytes": 308
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "paused_light",
+      "at": "2026-10-30T14:56:36.201Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 77086720,
+          "privateBytes": 72040448,
+          "cpuSeconds": 0.484375
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 140201984,
+          "privateBytes": 570359808,
+          "cpuSeconds": 0.625
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 77316096,
+          "privateBytes": 72114176,
+          "cpuSeconds": 0.5
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 140181504,
+          "privateBytes": 570257408,
+          "cpuSeconds": 0.625
+        }
+      ],
+      "workingSetBytes": 217497600,
+      "privateBytes": 642371584,
+      "sampleWallSeconds": 3.715410600000001,
+      "cpuSecondsDelta": 0.015625,
+      "percentOfOneCore": 0.4205457130364002,
+      "vmPercentOfOneCore": 0,
+      "controllerRssBytes": 77316096,
+      "status": "paused",
+      "metrics": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 281250000,
+        "memoryBytes": 70647808,
+        "memoryAvailableBytes": 466223104,
+        "memoryHostResidentBytes": null,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10298368,
+        "diskWriteBytes": 823296,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": null,
+        "upperFreeBytes": null,
+        "upperHostAllocatedBytes": 4653056,
+        "uptimeMs": 9406,
+        "timestamp": "2026-10-30T14:56:35.572Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294970130",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294970130,
+        "allocatedBytes": 4655890,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4653056
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 145,
+            "allocatedBytes": 145
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 1415,
+            "allocatedBytes": 1415
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 308,
+            "allocatedBytes": 308
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "running_with_128MiB_python",
+      "at": "2026-10-30T14:56:40.868Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 77987840,
+          "privateBytes": 72114176,
+          "cpuSeconds": 0.578125
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270774272,
+          "privateBytes": 570368000,
+          "cpuSeconds": 1.078125
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 78077952,
+          "privateBytes": 72114176,
+          "cpuSeconds": 0.59375
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270770176,
+          "privateBytes": 570368000,
+          "cpuSeconds": 1.484375
+        }
+      ],
+      "workingSetBytes": 348848128,
+      "privateBytes": 642482176,
+      "sampleWallSeconds": 3.6518751999999988,
+      "cpuSecondsDelta": 0.421875,
+      "percentOfOneCore": 11.552284152536213,
+      "vmPercentOfOneCore": 11.124421776516353,
+      "controllerRssBytes": 78090240,
+      "status": "running",
+      "metrics": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 640625000,
+        "memoryBytes": 200015872,
+        "memoryAvailableBytes": 336855040,
+        "memoryHostResidentBytes": 200478720,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10417152,
+        "diskWriteBytes": 823296,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": 753664,
+        "upperFreeBytes": 4134502400,
+        "upperHostAllocatedBytes": 4653056,
+        "uptimeMs": 14484,
+        "timestamp": "2026-10-30T14:56:40.650Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294971046",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294971047,
+        "allocatedBytes": 4656807,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4653056
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\info.json",
+            "logicalBytes": 764,
+            "allocatedBytes": 764
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\output.jsonl",
+            "logicalBytes": 0,
+            "allocatedBytes": 0
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 145,
+            "allocatedBytes": 145
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 1567,
+            "allocatedBytes": 1567
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 309,
+            "allocatedBytes": 309
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "paused_with_128MiB_python",
+      "at": "2026-10-30T14:56:45.229Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 78462976,
+          "privateBytes": 73203712,
+          "cpuSeconds": 0.625
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270753792,
+          "privateBytes": 570265600,
+          "cpuSeconds": 1.609375
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 78659584,
+          "privateBytes": 73203712,
+          "cpuSeconds": 0.640625
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270753792,
+          "privateBytes": 570265600,
+          "cpuSeconds": 1.609375
+        }
+      ],
+      "workingSetBytes": 349413376,
+      "privateBytes": 643469312,
+      "sampleWallSeconds": 3.751267899999999,
+      "cpuSecondsDelta": 0.015625,
+      "percentOfOneCore": 0.4165258365045057,
+      "vmPercentOfOneCore": 0,
+      "controllerRssBytes": 78659584,
+      "status": "paused",
+      "metrics": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 640625000,
+        "memoryBytes": 200015872,
+        "memoryAvailableBytes": 336855040,
+        "memoryHostResidentBytes": null,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10417152,
+        "diskWriteBytes": 823296,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": null,
+        "upperFreeBytes": null,
+        "upperHostAllocatedBytes": 4653056,
+        "uptimeMs": 18521,
+        "timestamp": "2026-10-30T14:56:44.687Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294971047",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294971047,
+        "allocatedBytes": 4656807,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4653056
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\info.json",
+            "logicalBytes": 764,
+            "allocatedBytes": 764
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\output.jsonl",
+            "logicalBytes": 0,
+            "allocatedBytes": 0
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 145,
+            "allocatedBytes": 145
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 1567,
+            "allocatedBytes": 1567
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 309,
+            "allocatedBytes": 309
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "resumed_with_128MiB_python",
+      "at": "2026-10-30T14:56:50.542Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 78991360,
+          "privateBytes": 73203712,
+          "cpuSeconds": 0.796875
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270774272,
+          "privateBytes": 570368000,
+          "cpuSeconds": 1.859375
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 79126528,
+          "privateBytes": 73203712,
+          "cpuSeconds": 0.796875
+        },
+        {
+          "pid": 87184,
+          "name": "msb",
+          "workingSetBytes": 270774272,
+          "privateBytes": 570368000,
+          "cpuSeconds": 2.3125
+        }
+      ],
+      "workingSetBytes": 349900800,
+      "privateBytes": 643571712,
+      "sampleWallSeconds": 3.762959899999998,
+      "cpuSecondsDelta": 0.453125,
+      "percentOfOneCore": 12.041717478838939,
+      "vmPercentOfOneCore": 12.041717478838939,
+      "controllerRssBytes": 79126528,
+      "status": "running",
+      "metrics": {
+        "cpuPercent": 3.0708889961242676,
+        "vcpuTimeNs": 718750000,
+        "memoryBytes": 200007680,
+        "memoryAvailableBytes": 336863232,
+        "memoryHostResidentBytes": 200478720,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10417152,
+        "diskWriteBytes": 851968,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": 753664,
+        "upperFreeBytes": 4134502400,
+        "upperHostAllocatedBytes": 4653056,
+        "uptimeMs": 23599,
+        "timestamp": "2026-10-30T14:56:49.765Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294971047",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294971047,
+        "allocatedBytes": 4656807,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4653056
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\info.json",
+            "logicalBytes": 764,
+            "allocatedBytes": 764
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\output.jsonl",
+            "logicalBytes": 0,
+            "allocatedBytes": 0
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 145,
+            "allocatedBytes": 145
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 1567,
+            "allocatedBytes": 1567
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 309,
+            "allocatedBytes": 309
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "stopped",
+      "at": "2026-10-30T14:56:55.207Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 79826944,
+          "privateBytes": 73269248,
+          "cpuSeconds": 0.859375
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 79826944,
+          "privateBytes": 73269248,
+          "cpuSeconds": 0.875
+        }
+      ],
+      "workingSetBytes": 79826944,
+      "privateBytes": 73269248,
+      "sampleWallSeconds": 3.922528900000001,
+      "cpuSecondsDelta": 0.015625,
+      "percentOfOneCore": 0.3983399586934846,
+      "vmPercentOfOneCore": 0,
+      "controllerRssBytes": 79826944,
+      "status": "stopped",
+      "metricsError": "SandboxNotRunningError: sandbox 'a2a-msb-resources-d5988a9f' is not running (status: Stopped)",
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294971781",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294971781,
+        "allocatedBytes": 4723077,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4718592
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\info.json",
+            "logicalBytes": 764,
+            "allocatedBytes": 764
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\output.jsonl",
+            "logicalBytes": 0,
+            "allocatedBytes": 0
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 223,
+            "allocatedBytes": 223
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 204,
+            "allocatedBytes": 204
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 2188,
+            "allocatedBytes": 2188
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 309,
+            "allocatedBytes": 309
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "started_again_light",
+      "at": "2026-10-30T14:57:00.600Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 80445440,
+          "privateBytes": 73478144,
+          "cpuSeconds": 0.984375
+        },
+        {
+          "pid": 70568,
+          "name": "msb",
+          "workingSetBytes": 135602176,
+          "privateBytes": 570368000,
+          "cpuSeconds": 0.390625
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 80449536,
+          "privateBytes": 73482240,
+          "cpuSeconds": 0.984375
+        },
+        {
+          "pid": 70568,
+          "name": "msb",
+          "workingSetBytes": 135614464,
+          "privateBytes": 570368000,
+          "cpuSeconds": 0.46875
+        }
+      ],
+      "workingSetBytes": 216064000,
+      "privateBytes": 643850240,
+      "sampleWallSeconds": 3.7571149000000004,
+      "cpuSecondsDelta": 0.078125,
+      "percentOfOneCore": 2.079388096435379,
+      "vmPercentOfOneCore": 2.079388096435379,
+      "controllerRssBytes": 80519168,
+      "status": "running",
+      "metrics": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 218750000,
+        "memoryBytes": 68091904,
+        "memoryAvailableBytes": 468779008,
+        "memoryHostResidentBytes": 66416640,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 10421248,
+        "diskWriteBytes": 12288,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": 753664,
+        "upperFreeBytes": 4134502400,
+        "upperHostAllocatedBytes": 4784128,
+        "uptimeMs": 4381,
+        "timestamp": "2026-10-30T14:57:00.302Z"
+      },
+      "storage": {
+        "name": "a2a-msb-resources-d5988a9f",
+        "path": "<LAB>\\runtime\\sandboxes\\a2a-msb-resources-d5988a9f",
+        "logicalBytes": "4294973200",
+        "allocatedBytes": null,
+        "inUse": null,
+        "reclaimable": null,
+        "reasons": [
+          "Persisted sandbox data is retained, including stopped and crashed sandboxes. Host bind mounts and shared runtime-memory caches are excluded."
+        ]
+      },
+      "sandboxDisk": {
+        "logicalBytes": 4294973200,
+        "allocatedBytes": 4790032,
+        "files": [
+          {
+            "name": "external-mounts.json",
+            "logicalBytes": 231,
+            "allocatedBytes": 231
+          },
+          {
+            "name": "upper.ext4",
+            "logicalBytes": 4294967296,
+            "allocatedBytes": 4784128
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\info.json",
+            "logicalBytes": 819,
+            "allocatedBytes": 819
+          },
+          {
+            "name": "jobs-v1\\job_182b72b3e6aca109fb33937118e1cd04\\output.jsonl",
+            "logicalBytes": 0,
+            "allocatedBytes": 0
+          },
+          {
+            "name": "logs\\exec.log",
+            "logicalBytes": 381,
+            "allocatedBytes": 381
+          },
+          {
+            "name": "logs\\kernel.log",
+            "logicalBytes": 169,
+            "allocatedBytes": 169
+          },
+          {
+            "name": "logs\\runtime.log",
+            "logicalBytes": 3429,
+            "allocatedBytes": 3429
+          },
+          {
+            "name": "runtime\\heartbeat.json",
+            "logicalBytes": 309,
+            "allocatedBytes": 309
+          },
+          {
+            "name": "runtime\\root-disk.json",
+            "logicalBytes": 438,
+            "allocatedBytes": 438
+          },
+          {
+            "name": "runtime\\runtime-boot-id",
+            "logicalBytes": 38,
+            "allocatedBytes": 38
+          },
+          {
+            "name": "runtime\\sdk-process.json",
+            "logicalBytes": 90,
+            "allocatedBytes": 90
+          }
+        ]
+      }
+    },
+    {
+      "label": "controller_only_after_destroy",
+      "at": "2026-10-30T14:57:04.888Z",
+      "firstProcesses": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 80621568,
+          "privateBytes": 73547776,
+          "cpuSeconds": 1.046875
+        }
+      ],
+      "processes": [
+        {
+          "pid": 7584,
+          "name": "node",
+          "workingSetBytes": 80752640,
+          "privateBytes": 73682944,
+          "cpuSeconds": 1.0625
+        }
+      ],
+      "workingSetBytes": 80752640,
+      "privateBytes": 73682944,
+      "sampleWallSeconds": 3.607890400000004,
+      "cpuSecondsDelta": 0.015625,
+      "percentOfOneCore": 0.4330785658012223,
+      "vmPercentOfOneCore": 0,
+      "controllerRssBytes": 80822272
+    }
+  ],
+  "timings": {
+    "createMs": 499.19959999999946,
+    "pauseLightMs": 14.852599999998347,
+    "resumeLightMs": 11.86030000000028,
+    "pauseLoadedMs": 11.418099999998958,
+    "resumeLoadedMs": 13.630899999996473,
+    "stopLoadedMs": 99.72509999999966,
+    "startExistingMs": 442.45670000000246
+  },
+  "checks": [
+    {
+      "name": "guest_process_frozen_during_pause",
+      "passed": true
+    },
+    {
+      "name": "same_process_continues_after_resume",
+      "passed": true
+    },
+    {
+      "name": "previous_python_not_restarted_by_start",
+      "passed": true
+    },
+    {
+      "name": "disk_file_persists_after_stop_start",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "liveJobId": "job_182b72b3e6aca109fb33937118e1cd04",
+  "finishedAt": "2026-10-30T14:57:04.888Z",
+  "passed": true
+}

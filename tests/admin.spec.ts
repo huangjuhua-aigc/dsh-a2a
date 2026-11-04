@@ -74,6 +74,17 @@ describe('the admin surface gates', () => {
     const response = await ipc(app!.managementSocket, '/a2a/admin/contexts', ADMIN_TOKEN, 'POST')
     expect(response.status).toBe(405)
   })
+
+  it('only the local owner can drain before stop, acknowledges it, and refuses new work', async () => {
+    expect((await fetch(`${app!.rpcUrl}/admin/prepare-stop`, { method: 'POST', headers: { authorization: `Bearer ${ADMIN_TOKEN}` } })).status).toBe(404)
+    expect((await ipc(app!.managementSocket, '/a2a/admin/prepare-stop', ALICE_TOKEN, 'POST')).status).toBe(401)
+    expect((await send('before safe stop')).result.task.status.state).toBe('TASK_STATE_COMPLETED')
+    const stopped = await ipc(app!.managementSocket, '/a2a/admin/prepare-stop', ADMIN_TOKEN, 'POST')
+    expect(stopped.status).toBe(200)
+    expect(stopped.body.readyToStop).toBe(true)
+    expect((await send('after safe stop')).error).toBeDefined()
+    expect((await ipc(app!.managementSocket, '/a2a/admin/prepare-stop', ADMIN_TOKEN, 'POST')).body.readyToStop).toBe(true)
+  })
 })
 
 describe('the admin surface data', () => {

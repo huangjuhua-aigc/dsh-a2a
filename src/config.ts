@@ -28,14 +28,18 @@ export interface PeerConfig {
 /** Working directories and the data roots exposed through the scoped reader. */
 export interface IsolationConfig {
   /**
-   * `per-peer` gives each identity its own cwd. Neither mode is a filesystem
-   * security boundary. read_file enforces its own canonical data-root boundary.
+   * Legacy field retained for checkpoint migration. Every visitor now has a
+   * private cwd outside public data, including old `shared` configurations.
    */
   workspaceMode: 'per-peer' | 'shared'
-  /** Shared read-only data root; also the cwd parent in `per-peer` mode. */
+  /** Shared public data. Never the parent of new visitor workspaces. */
   workspaceRoot: string
-  /** Overrides both a peer's cwd and its authorized read root. */
+  /** Legacy per-peer public-data overrides; no longer control runtime cwd. */
   peerWorkspaces: Record<string, string>
+  /** Private runtime parent, disjoint from all public-data directories. */
+  privateRoot?: string
+  /** Native mode only permits the bounded reader; isolated runtimes never fall back. */
+  execution?: 'read-only' | 'docker' | 'microsandbox'
 }
 
 /** One declared skill, as it appears on the Agent Card. */
@@ -225,6 +229,8 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
     workspaceMode: Schema.union(['per-peer', 'shared'] as const).default('per-peer'),
     workspaceRoot: Schema.string().required(),
     peerWorkspaces: Schema.dict(Schema.string()).default({}),
+    privateRoot: Schema.string(),
+    execution: Schema.union(['read-only', 'docker', 'microsandbox'] as const).default('read-only'),
   }).required(),
 
   preamble: Schema.object({
@@ -268,6 +274,7 @@ export class A2AConfigError extends Error {
  * @throws {A2AConfigError} when a peer name, credential reference, or path is unusable.
  */
 export function assertConfigCoherent(config: A2AServerConfig): void {
+  if (config.isolation.privateRoot !== undefined && !isAbsolute(config.isolation.privateRoot)) throw new A2AConfigError('isolation.privateRoot must be absolute')
   if (config.briefing?.prompt || config.briefing?.settingsFile) {
     if (!config.admin?.tokenEnv || !config.briefing.prompt.trim() || !isAbsolute(config.briefing.settingsFile)) {
       throw new A2AConfigError('automatic briefing requires owner administration, a prompt, and an absolute settingsFile')

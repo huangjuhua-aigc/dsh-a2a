@@ -38,7 +38,7 @@ for visitor permissions, automatic briefings, private owner access and Tailscale
 ## Install
 
 ```sh
-dsh plugin --profile web add dsh-a2a-server@0.3.0
+dsh plugin --profile web add dsh-a2a-server@0.4.0
 ```
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
@@ -65,10 +65,10 @@ ships in `dsh-web-app` rather than `dsh-base`, so a `headless` profile needs
 `@deepseek-ai/dsh-host-webserver` mounted before this bundle serves anything.
 `dsh --profile <name> --dump-config` prints the composed rows.
 
-### Upgrading from 0.2.x
+### Upgrading to 0.4.0
 
-Version 0.3.0 requires DSH `>=0.2.1-rc.2 <0.3.0`. Stop the agent, install
-`dsh-a2a-server@0.3.0` into its existing profile, then restart it. Owner RPC and
+Version 0.4.0 requires DSH `>=0.2.1-rc.2 <0.3.0`. Stop the agent, install
+`dsh-a2a-server@0.4.0` into its existing profile, then restart it. Owner RPC and
 monitoring now use authenticated local IPC; update the companion Portal as well.
 Visitors retain chat and scoped workspace reads, while other tools are denied.
 An empty `trustedPeers: []` denies all visitors. Task results persist across
@@ -77,7 +77,7 @@ restart within the configured retention window.
 The current [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent)
 configures default-on hourly briefings with one persistent switch. The plugin
 alone does not enable automatic briefing without its `briefing` configuration.
-See the [0.3.0 release notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.md).
+Portal automatically prepares Microsandbox for per-visitor isolation. Public data is copied read-only, excluding `node_modules`; private files persist on independent visitor disks. Idle VMs pause after 30 seconds and stop after 10 minutes. Existing standalone configurations keep their selected execution mode; installing the plugin alone does not enable a VM. See the [sandbox guide](docs/visitor-isolation.en.md) and [0.4.0 release notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.md).
 
 ## Quick start
 
@@ -125,7 +125,7 @@ curl -s http://127.0.0.1:9922/a2a \
 | `A2A_PEERS` | `alice` | `name[:token]` list; a token is required for each |
 | `A2A_PORT` | `9900` | Listening port |
 | `A2A_SEND_MODE` | `block` | `block` or `immediate` |
-| `A2A_WORKSPACE_ROOT` | temp dir | Authorized visitor data root and parent of per-peer working directories |
+| `A2A_WORKSPACE_ROOT` | temp dir | Shared public data; visitor workspaces live outside this root |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model id requested from the adapter |
 
 A one-shot probe runs 67 checks against a live server and exits non-zero on any
@@ -144,6 +144,7 @@ node example/probe.mjs http://127.0.0.1:9922 demo123
 | `/.well-known/agent.json` | GET | Public by default |
 | `{basePath}` (default `/a2a`) | POST | Bearer required |
 | `{basePath}/admin/contexts[/<id>]` | GET | Local IPC only + admin token; never registered on public HTTP |
+| `{basePath}/admin/prepare-stop` | POST | Local IPC + admin token; drain tasks and stop sandboxes before terminating DSH |
 
 | JSON-RPC method | Status |
 | --- | --- |
@@ -266,9 +267,11 @@ another peer answers exactly as an absent one.
 | `storage.directory` | `~/.dsh-a2a/<deployment-key>` | Private checkpoints; one process per directory |
 | `storage.retentionMs` / `storage.maxContexts` | `86400000` / `256` | Retention after last activity, and maximum stored contexts |
 | `storage.maxContextBytes` | `4000000` | Maximum checkpoint bytes per context |
-| `isolation.workspaceMode` | `per-peer` | `per-peer` or `shared` |
-| `isolation.workspaceRoot` | — | Required; authorized shared read-only data root and parent directory or shared cwd |
-| `isolation.peerWorkspaces` | `{}` | Per-identity cwd and authorized read-root override |
+| `isolation.workspaceMode` | `per-peer` | Legacy migration field; visitors now have an external private cwd |
+| `isolation.workspaceRoot` | — | Required; shared public read-only data root |
+| `isolation.peerWorkspaces` | `{}` | Legacy per-identity read-root override |
+| `isolation.privateRoot` | deployment-specific home directory | Private workspace parent, outside public data |
+| `isolation.execution` | `read-only` | Select `microsandbox` for per-visitor VMs (Portal default); legacy `docker` also supported |
 | `preamble.files` | `[".hop/handoff.md"]` | Host briefing files (**agent-level**: resolved against the workspace root and shared by every visitor; absolute paths pass through), merged into each context's first message; absent files are skipped |
 | `briefing.prompt` | — | Optional single-update instruction executed as the bounded local owner at startup and hourly; configured by Portal, requires owner administration |
 | `briefing.settingsFile` | — | Absolute path to a JSON `{ "enabled": boolean }` preference; absent file means enabled, observed every 5 seconds. Disabling preserves the current briefing and lets active work finish; restart timing is persisted |
@@ -312,13 +315,12 @@ identities.
 | Tooling | Only the scoped `read_file` is available; no writes, shell, network or cross-session tools | Inherited-tool masking, scoped reader, and execution guard |
 | Prompt context | Public agents have a dedicated system prompt and suppress optional host runtime context | Scoped complete prompt and context suppression |
 
-`per-peer` (the default) derives each identity's `cwd` from `workspaceRoot`.
-`shared` places every peer in one directory. These are working-directory choices,
-not filesystem sandboxes. `read_file` reads from the owner-selected
-`workspaceRoot`; a `peerWorkspaces` override restricts that peer to the overridden
-directory. Relative tool paths resolve from this **data root**, not the per-peer
-cwd. These files are available to admitted visitors, so choose the data root
-accordingly. The A2A checkpoint directory is always excluded.
+Visitor working directories now live outside `workspaceRoot`. The selected root
+contains public data; `read_file` defaults to it and accepts `root: "workspace"`
+for the current visitor's files. Portal automatically prepares Microsandbox:
+one VM per visitor, read-only public projections and persistent private disks.
+Idle VMs pause after 30 seconds and stop after 10 minutes, retaining files.
+Backend conversation storage is not mounted. See [setup and limits](docs/visitor-isolation.en.md).
 
 `read_file({"path":"."})` lists the root's entries. A file path reads UTF-8 text;
 `offset` (1-based) and `limit` page lines or directory entries. Reads are bounded

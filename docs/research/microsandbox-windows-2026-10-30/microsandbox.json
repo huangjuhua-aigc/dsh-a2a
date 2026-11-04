@@ -1,0 +1,656 @@
+{
+  "startedAt": "2026-10-30T14:37:21.485Z",
+  "sdkVersion": "0.7.11",
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "node": "v24.19.0"
+  },
+  "lab": "<LAB>\\run-RQpDE2",
+  "image": "docker.io/library/python:3.12-slim",
+  "policy": {
+    "cpu": 1,
+    "memoryMiB": 512,
+    "security": "restricted",
+    "network": false,
+    "guestUser": "root (stronger mount enforcement probe)"
+  },
+  "checks": [
+    {
+      "name": "alice.public_read",
+      "passed": true
+    },
+    {
+      "name": "alice.own_read",
+      "passed": true
+    },
+    {
+      "name": "alice.public_overwrite",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_append",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_create",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_delete",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_rename",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_move_to_private",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "alice.public_truncate",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_mkdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_rmdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_chmod",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.own_create_modify_rename_delete",
+      "passed": true
+    },
+    {
+      "name": "alice.unmounted_read_0",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_1",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_2",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_3",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_4",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_5",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_6",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_7",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_8",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.unmounted_read_9",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "alice.public_write_via_guest_symlink",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "alice.public_symlink_read",
+      "passed": true
+    },
+    {
+      "name": "alice.hardlink_public_to_work",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "alice.guest_scratch_writable",
+      "passed": true
+    },
+    {
+      "name": "alice.host_environment_not_inherited",
+      "passed": true
+    },
+    {
+      "name": "alice.network_blocked",
+      "passed": true
+    },
+    {
+      "name": "alice.readonly_remount_denied",
+      "passed": true
+    },
+    {
+      "name": "alice.public_unchanged_after_remount",
+      "passed": true
+    },
+    {
+      "name": "alice.generated_binary_readback",
+      "passed": true
+    },
+    {
+      "name": "alice.other_workspace_unchanged",
+      "passed": true
+    },
+    {
+      "name": "alice.sdk_returns_generated_bytes",
+      "passed": true
+    },
+    {
+      "sha256": "72708635a772573e3067005eccecaae1c564866849c44efd9e8a292a9f0a95d4",
+      "bytes": 297,
+      "name": "alice.host_export_hash_matches",
+      "passed": true
+    },
+    {
+      "name": "alice.file_persists_after_vm_destroy",
+      "passed": true
+    },
+    {
+      "name": "alice.new_vm_reads_persisted_output",
+      "passed": true
+    },
+    {
+      "name": "bob.public_read",
+      "passed": true
+    },
+    {
+      "name": "bob.own_read",
+      "passed": true
+    },
+    {
+      "name": "bob.public_overwrite",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_append",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_create",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_delete",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_rename",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_move_to_private",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "bob.public_truncate",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_mkdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_rmdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_chmod",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.own_create_modify_rename_delete",
+      "passed": true
+    },
+    {
+      "name": "bob.unmounted_read_0",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_1",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_2",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_3",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_4",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_5",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_6",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_7",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_8",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.unmounted_read_9",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "bob.public_write_via_guest_symlink",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "bob.public_symlink_read",
+      "passed": true
+    },
+    {
+      "name": "bob.hardlink_public_to_work",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "bob.guest_scratch_writable",
+      "passed": true
+    },
+    {
+      "name": "bob.host_environment_not_inherited",
+      "passed": true
+    },
+    {
+      "name": "bob.network_blocked",
+      "passed": true
+    },
+    {
+      "name": "bob.readonly_remount_denied",
+      "passed": true
+    },
+    {
+      "name": "bob.public_unchanged_after_remount",
+      "passed": true
+    },
+    {
+      "name": "bob.generated_binary_readback",
+      "passed": true
+    },
+    {
+      "name": "bob.other_workspace_unchanged",
+      "passed": true
+    },
+    {
+      "name": "bob.sdk_returns_generated_bytes",
+      "passed": true
+    },
+    {
+      "sha256": "516d229a521e959291b882a2bd617508b3ba6cc34bd5ca0cf9ce8e17b56c3204",
+      "bytes": 295,
+      "name": "bob.host_export_hash_matches",
+      "passed": true
+    },
+    {
+      "name": "bob.file_persists_after_vm_destroy",
+      "passed": true
+    },
+    {
+      "name": "bob.new_vm_reads_persisted_output",
+      "passed": true
+    },
+    {
+      "name": "host.public_tree_unchanged",
+      "passed": true
+    },
+    {
+      "name": "host.backend_tree_unchanged",
+      "passed": true
+    },
+    {
+      "name": "host.outside_tree_unchanged",
+      "passed": true
+    },
+    {
+      "error": "Error: Links and nested mounts are not allowed in container data: <LAB>\\run-RQpDE2\\hardlink-preflight\\alias.txt",
+      "name": "app_preflight.reject_hardlink",
+      "passed": true
+    },
+    {
+      "error": "Error: Links and nested mounts are not allowed in container data: <LAB>\\run-RQpDE2\\junction-preflight\\junction",
+      "name": "app_preflight.reject_junction",
+      "passed": true
+    }
+  ],
+  "performance": {
+    "execPythonRead": {
+      "count": 20,
+      "minMs": 25.95,
+      "medianMs": 28.78,
+      "maxMs": 33.1,
+      "samplesMs": [
+        29.82,
+        28.25,
+        26.96,
+        28.78,
+        29.99,
+        30.41,
+        28.06,
+        26.61,
+        30.39,
+        30.2,
+        28.34,
+        29.24,
+        28.78,
+        32.41,
+        33.1,
+        27.6,
+        28.27,
+        29.22,
+        25.95,
+        28.47
+      ]
+    },
+    "pauseResident": {
+      "count": 10,
+      "minMs": 6.77,
+      "medianMs": 8.12,
+      "maxMs": 24.85,
+      "samplesMs": [
+        14.59,
+        7.81,
+        8.83,
+        24.85,
+        7.96,
+        8.28,
+        7.89,
+        6.77,
+        9.19,
+        6.8
+      ]
+    },
+    "resumeResident": {
+      "count": 10,
+      "minMs": 4.21,
+      "medianMs": 5.07,
+      "maxMs": 5.78,
+      "samplesMs": [
+        4.77,
+        5.4,
+        4.4,
+        5.72,
+        4.44,
+        5.34,
+        4.81,
+        5.78,
+        4.21,
+        5.73
+      ]
+    },
+    "resumeAndPythonRead": {
+      "count": 10,
+      "minMs": 31.49,
+      "medianMs": 33.03,
+      "maxMs": 35.58,
+      "samplesMs": [
+        31.49,
+        32.43,
+        32.92,
+        35.58,
+        32.1,
+        32.33,
+        33.18,
+        35.54,
+        33.15,
+        34.67
+      ]
+    },
+    "cachedCreate": {
+      "count": 10,
+      "minMs": 385.42,
+      "medianMs": 387.19,
+      "maxMs": 403.77,
+      "samplesMs": [
+        399.51,
+        403.77,
+        386.86,
+        387.51,
+        400.03,
+        398.19,
+        386.86,
+        386.62,
+        385.68,
+        385.42
+      ]
+    },
+    "cachedCreateAndPythonRead": {
+      "count": 10,
+      "minMs": 506.62,
+      "medianMs": 510.52,
+      "maxMs": 532.98,
+      "samplesMs": [
+        532.98,
+        530.35,
+        506.62,
+        509.74,
+        528.02,
+        519.57,
+        509.78,
+        510.58,
+        506.78,
+        510.45
+      ]
+    },
+    "destroy": {
+      "count": 10,
+      "minMs": 92.45,
+      "medianMs": 107.25,
+      "maxMs": 113.41,
+      "samplesMs": [
+        113.41,
+        103.26,
+        92.45,
+        111.39,
+        105.56,
+        109.35,
+        105.9,
+        108.34,
+        107.92,
+        106.57
+      ]
+    }
+  },
+  "observations": [
+    {
+      "name": "alice_create_ms",
+      "value": 480.55
+    },
+    {
+      "name": "alice_guest_uid",
+      "value": 0
+    },
+    {
+      "name": "running_metrics",
+      "value": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 156250000,
+        "memoryBytes": 43081728,
+        "memoryAvailableBytes": 493789184,
+        "memoryHostResidentBytes": 55783424,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 250880,
+        "diskWriteBytes": 24576,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": null,
+        "upperFreeBytes": null,
+        "upperHostAllocatedBytes": 3735552,
+        "uptimeMs": 295,
+        "timestamp": "2026-10-30T14:37:21.987Z"
+      }
+    },
+    {
+      "name": "bob_create_ms",
+      "value": 412.46
+    },
+    {
+      "name": "bob_guest_uid",
+      "value": 0
+    },
+    {
+      "name": "raw_host_alias_behavior",
+      "value": [
+        {
+          "path": "hardlink.txt",
+          "read": "HARDLINK_CANARY",
+          "writeSucceeded": true
+        },
+        {
+          "path": "junction/junction-target.txt",
+          "readError": "[Errno 40] Too many levels of symbolic links: '/aliases/junction/junction-target.txt'",
+          "writeError": "[Errno 40] Too many levels of symbolic links: '/aliases/junction/junction-target.txt'"
+        }
+      ]
+    },
+    {
+      "name": "raw_host_alias_outside_unchanged",
+      "value": false
+    },
+    {
+      "name": "blocking_integration_requirement",
+      "value": "Reject pre-existing host hardlinks/reparse points before any bind, guard against host-side changes while mounted, or use private VM disks and controlled file export. Raw writable host bind does not meet strict path-only protection."
+    }
+  ],
+  "errors": [],
+  "cleanup": [
+    {
+      "name": "a2a-msb-alice-0fa8e92b",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-alice-restart-74854556",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bob-b699d5e0",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bob-restart-74a43c59",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-bb57d7c3",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-67b957d8",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-c7d6ecba",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-600c06c8",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-935e76a2",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-d11cddb7",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-2aa21a33",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-199758ec",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-e9a78499",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-b01a74fe",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-aliases-2c3f4386",
+      "removed": true
+    }
+  ],
+  "rawBindSafeWithoutPreflight": false,
+  "finishedAt": "2026-10-30T14:37:32.136Z",
+  "summary": {
+    "passed": 79,
+    "failed": 0,
+    "errors": 0
+  }
+}

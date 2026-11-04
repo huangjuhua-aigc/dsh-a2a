@@ -1,0 +1,145 @@
+{
+  "startedAt": "2026-10-30T14:39:01.098Z",
+  "image": "docker.io/library/python:3.12-slim",
+  "workload": "from pathlib import Path; assert Path(\"/public/read.txt\").read_text() == \"PUBLIC_FIXTURE\"; print(\"ok\")",
+  "policy": {
+    "cpus": 1,
+    "memoryMiB": 512,
+    "rootFilesystem": "read-only",
+    "user": "0:0",
+    "network": "none",
+    "caps": "none"
+  },
+  "performance": {
+    "cachedCreateCli": {
+      "count": 10,
+      "minMs": 347.74,
+      "medianMs": 390.21,
+      "maxMs": 446.8,
+      "samplesMs": [
+        442.24,
+        394.77,
+        446.8,
+        369.46,
+        378.21,
+        347.74,
+        385.65,
+        402.45,
+        410.5,
+        374.66
+      ]
+    },
+    "cachedCreateAndPythonReadCli": {
+      "count": 10,
+      "minMs": 667.53,
+      "medianMs": 712.61,
+      "maxMs": 785,
+      "samplesMs": [
+        756.09,
+        711.4,
+        785,
+        686.84,
+        674.64,
+        667.53,
+        686.92,
+        713.83,
+        746.06,
+        719.91
+      ]
+    },
+    "destroyCli": {
+      "count": 10,
+      "minMs": 258.3,
+      "medianMs": 265.71,
+      "maxMs": 377.71,
+      "samplesMs": [
+        263.74,
+        377.71,
+        261.22,
+        298.41,
+        258.3,
+        263.85,
+        267.57,
+        285.45,
+        259.06,
+        270.89
+      ]
+    },
+    "execPythonReadCli": {
+      "count": 20,
+      "minMs": 297.22,
+      "medianMs": 321.53,
+      "maxMs": 347.08,
+      "samplesMs": [
+        321.74,
+        334.61,
+        314.84,
+        297.22,
+        328.8,
+        328.12,
+        317.06,
+        330.71,
+        319.45,
+        311.22,
+        337.11,
+        347.02,
+        320.73,
+        320.25,
+        333.9,
+        347.08,
+        321.32,
+        319.03,
+        325.68,
+        303.26
+      ]
+    },
+    "execPythonReadEngineApi": {
+      "count": 20,
+      "minMs": 124.58,
+      "medianMs": 142.6,
+      "maxMs": 218.03,
+      "samplesMs": [
+        158.74,
+        138.15,
+        124.58,
+        140.96,
+        141.83,
+        155.11,
+        152.75,
+        142.2,
+        162.66,
+        218.03,
+        146.19,
+        143.74,
+        138.94,
+        127.66,
+        133.33,
+        129.37,
+        150.02,
+        143,
+        150.13,
+        131.02
+      ]
+    }
+  },
+  "errors": [],
+  "cleanup": [
+    "a2a-msb-docker-compare-1f4795bc-b648-482d-9378-77652610467f",
+    "a2a-msb-docker-compare-c26519cd-3fc0-4fac-ac25-bdab827f6e7f",
+    "a2a-msb-docker-compare-66fb2c61-6d89-4040-a412-182304bbe2bc",
+    "a2a-msb-docker-compare-e6dbfbf8-c913-4cd6-bfc5-cb0d09cd758f",
+    "a2a-msb-docker-compare-93789cad-7894-49fd-9d9b-529e092355dc",
+    "a2a-msb-docker-compare-404c4f93-98fc-453c-9cbc-24d60ffaa050",
+    "a2a-msb-docker-compare-739c484d-9579-42b1-9b55-58c1afecba0e",
+    "a2a-msb-docker-compare-45067fb0-a4a1-4e20-8760-7ccf8f72bfd5",
+    "a2a-msb-docker-compare-c6f30aaf-419b-4fd2-acf1-b55f57a8d4f3",
+    "a2a-msb-docker-compare-b501a3df-7b5a-4707-96b8-3b6bc5c244a0",
+    "a2a-msb-docker-compare-f29b1dd6-5de6-44f1-bae0-e7bd8f3bab3b"
+  ],
+  "engineVersion": "28.3.0",
+  "imageInspect": [
+    "python@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159"
+  ],
+  "python": "Python 3.12.16\n",
+  "finishedAt": "2026-10-30T14:39:22.098Z"
+}

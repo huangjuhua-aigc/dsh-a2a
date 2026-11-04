@@ -8,6 +8,7 @@ import { ipc } from './ipc.ts'
 import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 
 let root: string
+let privateRoot: string
 let app: Composition | undefined
 const token = 'test-hardening-alice'
 const owner = 'test-hardening-owner'
@@ -19,16 +20,19 @@ async function rpc(body: unknown, credential = token) {
 }
 async function boot(overrides: Partial<A2AServerConfig> = {}) {
   app = await compose({ forceStub: true, workspaceRoot: root, peers: { alice: 'HARDEN_ALICE', bob: 'HARDEN_BOB' },
-    adminTokenEnv: 'HARDEN_OWNER', overrides: { storage: { directory: join(root, 'state'), retentionMs: 86400000, maxContexts: 32, maxContextBytes: 4000000 }, ...overrides } })
+    adminTokenEnv: 'HARDEN_OWNER', overrides: { storage: { directory: join(root, 'state'), retentionMs: 86400000, maxContexts: 32, maxContextBytes: 4000000 }, ...overrides,
+      isolation: { workspaceMode: 'per-peer', workspaceRoot: root, peerWorkspaces: {}, ...overrides.isolation, privateRoot } } })
 }
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'a2a-hardening-'))
+  privateRoot = await mkdtemp(join(tmpdir(), 'a2a-hardening-private-'))
   process.env['HARDEN_ALICE'] = token; process.env['HARDEN_OWNER'] = owner; process.env['HARDEN_BOB'] = 'test-hardening-bob'
 })
 afterEach(async () => {
   await app?.stop(); app = undefined
   for (const key of ['HARDEN_ALICE', 'HARDEN_OWNER', 'HARDEN_BOB']) delete process.env[key]
   await rm(root, { recursive: true, force: true })
+  await rm(privateRoot, { recursive: true, force: true })
 })
 
 describe('public access boundaries', () => {

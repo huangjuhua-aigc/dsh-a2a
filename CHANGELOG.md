@@ -2,6 +2,17 @@
 
 [English](CHANGELOG.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 0.4.0 (2026-11-04)
+
+- Exclude nested `node_modules` from Microsandbox public projections without following dependency links or changing host projects. Other links, private imports and Docker mounts remain strictly checked.
+
+- Add owner-only local IPC `prepare-stop` to drain tasks and persist guest disks before Portal/CLI terminates the backend. Real-model Relay testing exposed lost recent writes when Windows terminated the process tree without this step.
+
+- Add automatically prepared Microsandbox 0.7.11 execution: one VM per authenticated visitor, read-only public projections and independent persistent private disks.
+- Pause after 30 idle seconds and stop after 10 idle minutes; serialize visitor tools, bound resident VMs, preserve files on stop/restart and recover abandoned instances.
+- Keep conversations and credentials outside guest mounts. Migrate old private files outside public roots; reject links and unsafe directory layouts. Only read_file remains exposed to visitors.
+- Verify native Python mutation boundaries, lifecycle, restart persistence, automatic preparation and Portal startup progress. See [isolation guide](docs/visitor-isolation.en.md).
+
 ## 0.3.0
 
 Requires DeepSeek Harness `>=0.2.1-rc.2 <0.3.0` and speaks A2A 1.0 JSON-RPC.

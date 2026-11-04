@@ -179,9 +179,13 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
     ...testState ? { storage: { directory: testState } } : {},
     ...options.overrides,
   } as A2AServerConfig)
+  const testWorkspaces = options.forceStub && !config.isolation.privateRoot
+    ? await mkdtemp(join(tmpdir(), 'dsh-a2a-workspaces-')) : undefined
+  if (testWorkspaces) config.isolation.privateRoot = testWorkspaces
   try { await ctx.plugin(A2AServer, config) } catch (error) {
     await ctx.fiber.dispose()
     if (testState) await rm(testState, { recursive: true, force: true })
+    if (testWorkspaces) await rm(testWorkspaces, { recursive: true, force: true })
     throw error
   }
 
@@ -202,6 +206,7 @@ export async function compose(options: ComposeOptions): Promise<Composition> {
     stop: async () => {
       await ctx.fiber.dispose()
       if (testState) await rm(testState, { recursive: true, force: true })
+      if (testWorkspaces) await rm(testWorkspaces, { recursive: true, force: true })
     },
   }
 }

@@ -36,7 +36,8 @@ export async function startManagement(config: A2AServerConfig, router: Router): 
     let url: URL
     try { url = new URL(req.url ?? '/', 'http://localhost') } catch { res.writeHead(400); res.end(); return }
     if (url.pathname === config.basePath) void router.serveOwnerRpc(req, res)
-    else if (url.pathname === `${config.basePath}/admin/contexts`
+    else if (url.pathname === `${config.basePath}/admin/prepare-stop`
+      || url.pathname === `${config.basePath}/admin/contexts`
       || url.pathname.startsWith(`${config.basePath}/admin/contexts/`)) void router.serveAdmin(req, res)
     else { res.writeHead(404); res.end() }
   })

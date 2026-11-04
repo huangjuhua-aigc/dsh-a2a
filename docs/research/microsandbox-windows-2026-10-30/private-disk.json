@@ -1,0 +1,48 @@
+{
+  "startedAt": "2026-10-30T14:40:23.691Z",
+  "name": "a2a-msb-private-disk-74043b9d",
+  "checks": [
+    {
+      "name": "public_write_denied",
+      "passed": true
+    },
+    {
+      "name": "public_delete_denied",
+      "passed": true
+    },
+    {
+      "name": "public_to_private_hardlink_denied",
+      "passed": true
+    },
+    {
+      "name": "private_crud",
+      "passed": true
+    },
+    {
+      "name": "other_workspace_absent",
+      "passed": true
+    },
+    {
+      "name": "export_bytes_equal",
+      "passed": true
+    },
+    {
+      "name": "private_disk_survives_stop_start",
+      "passed": true
+    },
+    {
+      "name": "export_survives_vm_destroy",
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "policy": {
+    "public": "read-only host bind",
+    "private": "owned 128 MiB disk; no writable host directory bind"
+  },
+  "createMs": 525.6314,
+  "stopAndStartMs": 463.2880999999999,
+  "exportedFile": "<LAB>\\run-RQpDE2\\exports\\private-disk-report.txt",
+  "finishedAt": "2026-10-30T14:40:24.940Z",
+  "passed": true
+}

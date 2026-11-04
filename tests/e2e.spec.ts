@@ -11,7 +11,7 @@
 
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { compose, type Composition } from '../example/compose.ts'
 import { SERVER_VERSION } from '../src/version.ts'
@@ -334,7 +334,11 @@ describe('peer isolation', () => {
     await rpc(app!.rpcUrl, BOB_TOKEN, sendRequest(2, 'hi'))
     const { readdir } = await import('node:fs/promises')
     const entries = await readdir(workspaceRoot)
-    expect(entries.sort()).toEqual(['alice', 'bob'])
+    expect(entries).toEqual([])
+    const cwds = app!.ctx.agents.list().map(agent => agent.session.header.cwd)
+    expect(cwds.some(cwd => cwd?.endsWith(`${sep}alice`))).toBe(true)
+    expect(cwds.some(cwd => cwd?.endsWith(`${sep}bob`))).toBe(true)
+    expect(cwds.every(cwd => cwd && !cwd.startsWith(workspaceRoot))).toBe(true)
   })
 
   it("reports another peer's task as not found", async () => {

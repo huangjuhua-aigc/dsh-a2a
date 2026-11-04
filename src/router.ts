@@ -109,6 +109,8 @@ export interface RouterDeps {
    */
   /** The whole monitoring view over resident contexts. */
   adminSnapshot?: () => AdminSnapshot
+  /** Drain tasks and persist guest disks before the local owner stops the host. */
+  prepareStop?: () => Promise<void>
 }
 
 /** One task as the monitoring surface shows it. */
@@ -806,8 +808,9 @@ export function createRouter(deps: RouterDeps): Router {
         fail(404, 'not_mounted', 'the admin surface is not configured on this deployment')
         return
       }
-      if (req.method !== 'GET') {
-        res.setHeader('allow', 'GET')
+      const stopping = new URL(req.url ?? '/', 'http://localhost').pathname === `${deps.config.basePath}/admin/prepare-stop`
+      if (req.method !== (stopping ? 'POST' : 'GET')) {
+        res.setHeader('allow', stopping ? 'POST' : 'GET')
         fail(405, 'method_not_allowed', 'the admin surface is read-only')
         return
       }
@@ -820,6 +823,13 @@ export function createRouter(deps: RouterDeps): Router {
       const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]
       if (presented === undefined || !constantTimeEqual(presented, expected)) {
         fail(401, 'unauthorized', 'a valid admin token is required')
+        return
+      }
+      if (stopping) {
+        if (!deps.prepareStop) { fail(404, 'not_mounted', 'graceful stop is not available'); return }
+        await deps.prepareStop()
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ readyToStop: true }))
         return
       }
       const snapshot = deps.adminSnapshot()

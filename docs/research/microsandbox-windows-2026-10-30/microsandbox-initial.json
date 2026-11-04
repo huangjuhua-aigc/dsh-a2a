@@ -1,0 +1,641 @@
+{
+  "startedAt": "2026-10-30T14:35:25.921Z",
+  "sdkVersion": "0.7.11",
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "node": "v24.19.0"
+  },
+  "lab": "<LAB>\\run-eNjeBO",
+  "image": "docker.io/library/python:3.12-slim",
+  "policy": {
+    "cpu": 1,
+    "memoryMiB": 512,
+    "security": "restricted",
+    "network": false,
+    "guestUser": "root (stronger mount enforcement probe)"
+  },
+  "checks": [
+    {
+      "name": "public_read",
+      "passed": true
+    },
+    {
+      "name": "own_read",
+      "passed": true
+    },
+    {
+      "name": "public_overwrite",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_append",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_create",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_delete",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_rename",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_move_to_private",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "public_truncate",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_mkdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_rmdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_chmod",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "own_create_modify_rename_delete",
+      "passed": true
+    },
+    {
+      "name": "unmounted_read_0",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_1",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_2",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_3",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_4",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_5",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_6",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_7",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_8",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_9",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "public_write_via_guest_symlink",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_symlink_read",
+      "passed": true
+    },
+    {
+      "name": "hardlink_public_to_work",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "guest_scratch_writable",
+      "passed": true
+    },
+    {
+      "name": "host_environment_not_inherited",
+      "passed": true
+    },
+    {
+      "name": "network_blocked",
+      "passed": true
+    },
+    {
+      "name": "readonly_remount_denied",
+      "passed": true
+    },
+    {
+      "name": "public_unchanged_after_remount",
+      "passed": true
+    },
+    {
+      "name": "generated_binary_readback",
+      "passed": true
+    },
+    {
+      "name": "alice.other_workspace_unchanged",
+      "passed": true
+    },
+    {
+      "name": "alice.sdk_returns_generated_bytes",
+      "passed": true
+    },
+    {
+      "name": "alice.host_export_hash_matches",
+      "passed": true,
+      "sha256": "72708635a772573e3067005eccecaae1c564866849c44efd9e8a292a9f0a95d4",
+      "bytes": 297
+    },
+    {
+      "name": "alice.file_persists_after_vm_destroy",
+      "passed": true
+    },
+    {
+      "name": "alice.new_vm_reads_persisted_output",
+      "passed": true
+    },
+    {
+      "name": "public_read",
+      "passed": true
+    },
+    {
+      "name": "own_read",
+      "passed": true
+    },
+    {
+      "name": "public_overwrite",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_append",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_create",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_delete",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_rename",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_move_to_private",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "public_truncate",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_mkdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_rmdir",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_chmod",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "own_create_modify_rename_delete",
+      "passed": true
+    },
+    {
+      "name": "unmounted_read_0",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_1",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_2",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_3",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_4",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_5",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_6",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_7",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_8",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "unmounted_read_9",
+      "passed": true,
+      "errno": 2
+    },
+    {
+      "name": "public_write_via_guest_symlink",
+      "passed": true,
+      "errno": 30
+    },
+    {
+      "name": "public_symlink_read",
+      "passed": true
+    },
+    {
+      "name": "hardlink_public_to_work",
+      "passed": true,
+      "errno": 18
+    },
+    {
+      "name": "guest_scratch_writable",
+      "passed": true
+    },
+    {
+      "name": "host_environment_not_inherited",
+      "passed": true
+    },
+    {
+      "name": "network_blocked",
+      "passed": true
+    },
+    {
+      "name": "readonly_remount_denied",
+      "passed": true
+    },
+    {
+      "name": "public_unchanged_after_remount",
+      "passed": true
+    },
+    {
+      "name": "generated_binary_readback",
+      "passed": true
+    },
+    {
+      "name": "bob.other_workspace_unchanged",
+      "passed": true
+    },
+    {
+      "name": "bob.sdk_returns_generated_bytes",
+      "passed": true
+    },
+    {
+      "name": "bob.host_export_hash_matches",
+      "passed": true,
+      "sha256": "516d229a521e959291b882a2bd617508b3ba6cc34bd5ca0cf9ce8e17b56c3204",
+      "bytes": 295
+    },
+    {
+      "name": "bob.file_persists_after_vm_destroy",
+      "passed": true
+    },
+    {
+      "name": "bob.new_vm_reads_persisted_output",
+      "passed": true
+    },
+    {
+      "name": "host.public_tree_unchanged",
+      "passed": true
+    },
+    {
+      "name": "host.backend_tree_unchanged",
+      "passed": true
+    },
+    {
+      "name": "host.outside_tree_unchanged",
+      "passed": true
+    }
+  ],
+  "performance": {
+    "execPythonRead": {
+      "count": 20,
+      "minMs": 25.57,
+      "medianMs": 28.24,
+      "maxMs": 30.7,
+      "samplesMs": [
+        27.95,
+        28.55,
+        26.78,
+        30.45,
+        26.65,
+        28.06,
+        29.02,
+        28.07,
+        26.29,
+        29.44,
+        28.14,
+        28.85,
+        30.7,
+        28.34,
+        25.57,
+        30.49,
+        26.3,
+        28.77,
+        26.87,
+        29.35
+      ]
+    },
+    "pauseResident": {
+      "count": 10,
+      "minMs": 6.63,
+      "medianMs": 7.66,
+      "maxMs": 13.32,
+      "samplesMs": [
+        13.32,
+        7.05,
+        8.55,
+        11.77,
+        7.76,
+        7.19,
+        6.63,
+        7.55,
+        7.19,
+        9.48
+      ]
+    },
+    "resumeResident": {
+      "count": 10,
+      "minMs": 4.5,
+      "medianMs": 5.25,
+      "maxMs": 5.68,
+      "samplesMs": [
+        5.35,
+        5.68,
+        5.41,
+        5.31,
+        5.46,
+        4.66,
+        4.5,
+        4.9,
+        4.94,
+        5.19
+      ]
+    },
+    "resumeAndPythonRead": {
+      "count": 10,
+      "minMs": 32.02,
+      "medianMs": 34.19,
+      "maxMs": 40.48,
+      "samplesMs": [
+        33.04,
+        34.14,
+        36.07,
+        40.48,
+        32.92,
+        34.38,
+        32.02,
+        32.53,
+        34.24,
+        34.84
+      ]
+    },
+    "cachedCreate": {
+      "count": 10,
+      "minMs": 398.75,
+      "medianMs": 403.52,
+      "maxMs": 498.61,
+      "samplesMs": [
+        402.87,
+        405.57,
+        401.64,
+        398.75,
+        404.18,
+        400.07,
+        438.45,
+        498.61,
+        434.5,
+        400.64
+      ]
+    },
+    "cachedCreateAndPythonRead": {
+      "count": 10,
+      "minMs": 526.43,
+      "medianMs": 533.77,
+      "maxMs": 665.06,
+      "samplesMs": [
+        535.26,
+        530.25,
+        526.43,
+        532.28,
+        531.25,
+        526.74,
+        665.06,
+        634.64,
+        571.62,
+        536.06
+      ]
+    },
+    "destroy": {
+      "count": 10,
+      "minMs": 94.58,
+      "medianMs": 107.98,
+      "maxMs": 156.94,
+      "samplesMs": [
+        110.43,
+        106.71,
+        109.24,
+        96.42,
+        103.81,
+        105.15,
+        156.94,
+        94.58,
+        110.57,
+        116.31
+      ]
+    }
+  },
+  "observations": [
+    {
+      "name": "alice_create_ms",
+      "value": 490.91
+    },
+    {
+      "name": "alice_guest_uid",
+      "value": 0
+    },
+    {
+      "name": "running_metrics",
+      "value": {
+        "cpuPercent": 0,
+        "vcpuTimeNs": 140625000,
+        "memoryBytes": 43339776,
+        "memoryAvailableBytes": 493531136,
+        "memoryHostResidentBytes": 56197120,
+        "memoryLimitBytes": 536870912,
+        "diskReadBytes": 250880,
+        "diskWriteBytes": 24576,
+        "netRxBytes": 0,
+        "netTxBytes": 0,
+        "upperUsedBytes": null,
+        "upperFreeBytes": null,
+        "upperHostAllocatedBytes": 3735552,
+        "uptimeMs": 292,
+        "timestamp": "2026-10-30T14:35:26.436Z"
+      }
+    },
+    {
+      "name": "bob_create_ms",
+      "value": 413.5
+    },
+    {
+      "name": "bob_guest_uid",
+      "value": 0
+    },
+    {
+      "name": "raw_host_alias_behavior",
+      "value": [
+        {
+          "path": "hardlink.txt",
+          "read": "HARDLINK_CANARY",
+          "writeSucceeded": true
+        },
+        {
+          "path": "junction/junction-target.txt",
+          "readError": "[Errno 40] Too many levels of symbolic links: '/aliases/junction/junction-target.txt'",
+          "writeError": "[Errno 40] Too many levels of symbolic links: '/aliases/junction/junction-target.txt'"
+        }
+      ]
+    },
+    {
+      "name": "raw_host_alias_outside_unchanged",
+      "value": false
+    }
+  ],
+  "errors": [],
+  "cleanup": [
+    {
+      "name": "a2a-msb-alice-b1201937",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-alice-restart-63963b1a",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bob-a6db0db5",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bob-restart-173550c1",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-2768aabd",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-4b450c3e",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-51eef2de",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-ffe7785d",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-a07b75ff",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-4fc7549c",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-03b58fe5",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-9132fbe6",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-e0da07c4",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-bench-33768986",
+      "removed": true
+    },
+    {
+      "name": "a2a-msb-aliases-70ae3ea1",
+      "removed": true
+    }
+  ],
+  "finishedAt": "2026-10-30T14:35:37.019Z",
+  "summary": {
+    "passed": 77,
+    "failed": 0,
+    "errors": 0
+  }
+}
