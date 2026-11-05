@@ -49,6 +49,8 @@ import type { A2AServerConfig } from './config.ts'
 import type { Activation, ContextRegistry } from './contexts.ts'
 import { constantTimeEqual, filterInbound, redactOutbound, type PeerIdentity, type RateLimiter, type TurnTracker } from './security.ts'
 import type { TaskSlot, TaskSettlement } from './tasks.ts'
+import { REGISTER_PUBLIC_VISITOR, PUBLIC_VISITOR_STATUS, publicVisitorError, type PublicVisitors } from './public-visitors.ts'
+import { VisitorAdmissionError, type LiveVisitor } from './live-visitors.ts'
 
 /** Largest request body accepted, before parsing. */
 const MAX_BODY_BYTES = 1_000_000
@@ -58,6 +60,9 @@ const DEFAULT_PAGE_SIZE = 50
 
 /** Everything the router needs from the plugin body. */
 export interface RouterDeps {
+  identifyLiveVisitor?: (token: string | undefined) => LiveVisitor | undefined
+  addLiveVisitor?: (input: unknown) => Promise<{ name: string; applied: true }>
+  publicVisitors?: PublicVisitors
   config: A2AServerConfig
   contexts: ContextRegistry
   turns: TurnTracker
@@ -138,6 +143,7 @@ export interface AdminContextView {
 
 /** What `{basePath}/admin/contexts` serves. */
 export interface AdminSnapshot {
+  publicVisitors?: { enabled: boolean; turnLimit: number; managed: boolean }
   generatedAt: string
   contexts: AdminContextView[]
 }
@@ -201,13 +207,13 @@ export function createRouter(deps: RouterDeps): Router {
     sendJson(res, status, jsonRpcError(null, ERR_INVALID_REQUEST, message))
   }
 
-  const readBody = async (req: IncomingMessage): Promise<string> => {
+  const readBody = async (req: IncomingMessage, maximum = MAX_BODY_BYTES): Promise<string> => {
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of req) {
       const buffer = chunk as Buffer
       size += buffer.length
-      if (size > MAX_BODY_BYTES) {
+      if (size > maximum) {
         throw new A2ARpcError(ERR_PARSE, 'payload too large', { httpStatus: 413 })
       }
       chunks.push(buffer)
@@ -232,6 +238,7 @@ export function createRouter(deps: RouterDeps): Router {
     }
 
     let peer: PeerIdentity | undefined
+    let liveVisitor: LiveVisitor | undefined
     try {
       deps.assertOpen()
       const presented = typeof req.headers.authorization === 'string'
@@ -243,7 +250,9 @@ export function createRouter(deps: RouterDeps): Router {
       if (ownerChannel && presented !== undefined && ownerSecret !== undefined && constantTimeEqual(presented, ownerSecret)) {
         peer = 'owner'
       } else if (!ownerChannel && !(presented !== undefined && ownerSecret !== undefined && constantTimeEqual(presented, ownerSecret))) {
-        peer = deps.identify(presented, await deps.resolvePeerSecrets())
+        liveVisitor = deps.identifyLiveVisitor?.(presented)
+        peer = liveVisitor?.name ?? deps.identify(presented, await deps.resolvePeerSecrets())
+          ?? deps.publicVisitors?.identify(presented)
       }
     } catch (error: unknown) {
       deps.logger.warn(`a2a: credential resolution failed: ${String(error)}`)
@@ -252,17 +261,57 @@ export function createRouter(deps: RouterDeps): Router {
     }
 
     if (peer === undefined) {
-      sendAuthFailure(res, 401, 'unauthorized')
+      // Issue a challenge before activation, quota charging or model work. Only
+      // absent credentials qualify; a rejected credential must retain its identity.
+      if (!ownerChannel && req.headers.authorization === undefined && deps.publicVisitors?.enabled()) {
+        try {
+          const body = await readBody(req)
+          const request = JSON.parse(body) as Record<string, unknown>
+          if (!request || Array.isArray(request) || request.jsonrpc !== '2.0' || !['string', 'number'].includes(typeof request.id)) {
+            sendJson(res, 400, jsonRpcError(null, ERR_INVALID_REQUEST, 'Expected a JSON-RPC request with an id')); return
+          }
+          const id = request.id as string | number
+          const version = req.headers['a2a-version']
+          if (version && version !== '1.0' && version !== '1.0.0') { sendRpcError(res, id, versionNotSupported(String(version), A2A_PROTOCOL_VERSION)); return }
+          res.setHeader('cache-control', 'no-store')
+          if (request.method === REGISTER_PUBLIC_VISITOR) {
+            if (Buffer.byteLength(body) > 4096) throw new A2ARpcError(ERR_PARSE, 'payload too large', { httpStatus: 413 })
+            if (request.params !== undefined && (!request.params || typeof request.params !== 'object' || Array.isArray(request.params) || Object.keys(request.params).length > 0)) {
+              sendJson(res, 400, jsonRpcError(null, ERR_INVALID_PARAMS, 'Registration expects an empty params object')); return
+            }
+            try { sendJson(res, 200, jsonRpcResult(id, deps.publicVisitors.register())) }
+            catch (error) { if (error instanceof A2ARpcError) { sendRpcError(res, id, error); return }; throw error }
+            return
+          }
+          if (request.method === 'SendMessage' || request.method === 'SendStreamingMessage') {
+            res.setHeader('www-authenticate', 'Bearer')
+            sendRpcError(res, id, publicVisitorError('PUBLIC_VISITOR_AUTH_REQUIRED',
+              'Anonymous sign-in required. This message has not been accepted; register a visitor, save its token, then send this message again.', 401,
+              { nextAction: 'join', registrationMethod: REGISTER_PUBLIC_VISITOR, turnLimit: '5' })); return
+          }
+        } catch (error) {
+          if (error instanceof A2ARpcError) { sendRpcError(res, null, error); return }
+          sendJson(res, error instanceof SyntaxError ? 400 : 503, jsonRpcError(null, ERR_INVALID_REQUEST, 'Public visitor admission unavailable')); return
+        }
+      }
+      if (ownerChannel) { sendAuthFailure(res, 401, 'unauthorized'); return }
+      res.setHeader('www-authenticate', 'Bearer'); res.setHeader('cache-control', 'no-store')
+      sendRpcError(res, null, req.headers.authorization === undefined
+        ? publicVisitorError('INVITATION_REQUIRED', 'Contact the agent owner for an invitation', 401, { nextAction: 'contact_owner' })
+        : publicVisitorError('INVALID_TOKEN', 'The token is invalid or revoked; restore your credential or contact the agent owner', 401, { nextAction: 'contact_owner' }))
       return
+    }
+    const publicVisitor = deps.publicVisitors?.owns(peer) === true
+    if (publicVisitor && !deps.publicVisitors!.enabled()) {
+      sendRpcError(res, null, publicVisitorError('INVITATION_REQUIRED', 'Public visitors are disabled; contact the agent owner for access', 403, { nextAction: 'contact_owner' })); return
     }
     if (!deps.rateLimiter.allow(peer)) {
       sendAuthFailure(res, 429, 'rate limit exceeded')
       return
     }
     // The owner bypasses the visitor allow list: the console IS the trust.
-    if (peer !== 'owner'
-      && config.trustedPeers !== undefined
-      && !config.trustedPeers.includes(peer)) {
+    if (peer !== 'owner' && !publicVisitor
+      && (liveVisitor ? !liveVisitor.trusted : config.trustedPeers !== undefined && !config.trustedPeers.includes(peer))) {
       sendAuthFailure(res, 403, `peer "${peer}" is not trusted`)
       return
     }
@@ -310,6 +359,11 @@ export function createRouter(deps: RouterDeps): Router {
       return
     }
 
+    if (method === PUBLIC_VISITOR_STATUS && publicVisitor) {
+      res.setHeader('cache-control', 'no-store')
+      sendJson(res, 200, jsonRpcResult(id, deps.publicVisitors!.status(peer))); return
+    }
+    if (publicVisitor && method === 'GetExtendedAgentCard') { sendAuthFailure(res, 403, 'Public visitors cannot access the extended card'); return }
     const operation = resolveMethod(method)
     if (operation === undefined) {
       const replacement = legacyMethodReplacement(method)
@@ -808,9 +862,11 @@ export function createRouter(deps: RouterDeps): Router {
         fail(404, 'not_mounted', 'the admin surface is not configured on this deployment')
         return
       }
-      const stopping = new URL(req.url ?? '/', 'http://localhost').pathname === `${deps.config.basePath}/admin/prepare-stop`
-      if (req.method !== (stopping ? 'POST' : 'GET')) {
-        res.setHeader('allow', stopping ? 'POST' : 'GET')
+      const path = new URL(req.url ?? '/', 'http://localhost').pathname
+      const stopping = path === `${deps.config.basePath}/admin/prepare-stop`
+      const addingVisitor = path === `${deps.config.basePath}/admin/visitors`
+      if (req.method !== (stopping || addingVisitor ? 'POST' : 'GET')) {
+        res.setHeader('allow', stopping || addingVisitor ? 'POST' : 'GET')
         fail(405, 'method_not_allowed', 'the admin surface is read-only')
         return
       }
@@ -823,6 +879,16 @@ export function createRouter(deps: RouterDeps): Router {
       const presented = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]
       if (presented === undefined || !constantTimeEqual(presented, expected)) {
         fail(401, 'unauthorized', 'a valid admin token is required')
+        return
+      }
+      if (addingVisitor) {
+        if (!deps.addLiveVisitor) { fail(404, 'not_mounted', 'live visitor admission is unavailable'); return }
+        let input: unknown
+        try { input = JSON.parse(await readBody(req, 4096)) }
+        catch (error) { fail(error instanceof A2ARpcError ? error.httpStatus : 400, 'invalid_request', 'Invalid visitor admission request'); return }
+        const result = await deps.addLiveVisitor(input)
+        res.setHeader('cache-control', 'no-store')
+        sendJson(res, 200, result)
         return
       }
       if (stopping) {
@@ -852,6 +918,7 @@ export function createRouter(deps: RouterDeps): Router {
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify(view))
     } catch (error: unknown) {
+      if (error instanceof VisitorAdmissionError) { fail(error.status, 'visitor_admission_failed', error.message); return }
       deps.logger.error(`a2a: admin request failed: ${String(error)}`)
       fail(500, 'internal', 'internal error')
     }

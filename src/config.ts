@@ -125,6 +125,7 @@ export interface A2AServerConfig {
   model?: string
   card: CardConfig
   peers: Record<string, PeerConfig>
+  publicVisitors?: { enabled: boolean; settingsFile?: string }
   trustedPeers?: string[]
   rateLimitPerMinute: number
   maxContextTurns: number
@@ -199,6 +200,7 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
     tokenEnv: Schema.string().required(),
   })).default({}),
   // An array schema implicitly defaults to []; the wrapper preserves omission.
+  publicVisitors: Schema.object({ enabled: Schema.boolean().default(false), settingsFile: Schema.string() }),
   trustedPeers: Schema.union([Schema.array(Schema.string())]),
   rateLimitPerMinute: Schema.natural().default(60),
   maxContextTurns: Schema.natural().default(5),
@@ -274,6 +276,7 @@ export class A2AConfigError extends Error {
  * @throws {A2AConfigError} when a peer name, credential reference, or path is unusable.
  */
 export function assertConfigCoherent(config: A2AServerConfig): void {
+  if (config.publicVisitors?.settingsFile && !isAbsolute(config.publicVisitors.settingsFile)) throw new A2AConfigError('publicVisitors.settingsFile must be absolute')
   if (config.isolation.privateRoot !== undefined && !isAbsolute(config.isolation.privateRoot)) throw new A2AConfigError('isolation.privateRoot must be absolute')
   if (config.briefing?.prompt || config.briefing?.settingsFile) {
     if (!config.admin?.tokenEnv || !config.briefing.prompt.trim() || !isAbsolute(config.briefing.settingsFile)) {
@@ -298,6 +301,7 @@ export function assertConfigCoherent(config: A2AServerConfig): void {
     }
   }
   for (const [peer, entry] of Object.entries(config.peers)) {
+    if (peer.startsWith('public-')) throw new A2AConfigError('peer prefix "public-" is reserved for automatically issued public visitors')
     if (peer === 'owner') {
       throw new A2AConfigError('peer name "owner" is reserved for the deployment owner (the local console)')
     }

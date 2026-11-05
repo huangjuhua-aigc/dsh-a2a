@@ -12,6 +12,7 @@ import { visitorReadTool } from '../src/visitor-read.ts'
 import { removeOwned } from '../src/sandbox-files.ts'
 import { compose } from '../example/compose.ts'
 import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { ipc } from './ipc.ts'
 
 describe.skipIf(process.env['A2A_MICROSANDBOX_TEST'] !== '1')('real Microsandbox visitor boundary and persistence', () => {
   let base: string, runtime: PreparedRuntime, isolation: Awaited<ReturnType<typeof prepareIsolation>>
@@ -180,6 +181,82 @@ print(json.dumps({'privateCrud':True,'publicMutationsDenied':denied}))`, [], sig
       if (oldToken === undefined) delete process.env['A2A_MSB_TEST_PEER']; else process.env['A2A_MSB_TEST_PEER'] = oldToken
     }
   },60_000)
+
+  it.each(['public', 'invited'] as const)('creates separate real VMs for dynamically admitted %s visitors and denies cross-workspace reads', async (admission) => {
+    await manager.close()
+    await writeFile(join(base, 'public/info.txt'), 'PUBLIC\n公开资料')
+    const oldHome = process.env['A2A_SANDBOX_HOME'], oldOwner = process.env['A2A_MSB_LIVE_OWNER'], privateRoot = join(base, `${admission}-visitor-workspaces`)
+    process.env['A2A_SANDBOX_HOME'] = runtime.directory
+    process.env['A2A_MSB_LIVE_OWNER'] = 'fixture-msb-local-owner-token'
+    let app: Awaited<ReturnType<typeof compose>> | undefined
+    const visitors: { token: string; visitorId: string }[] = []
+    try {
+      app = await compose({ forceStub: true, workspaceRoot: join(base, 'public'), peers: {}, adminTokenEnv: 'A2A_MSB_LIVE_OWNER', overrides: {
+        publicVisitors: { enabled: true },
+        isolation: { workspaceRoot: join(base, 'public'), privateRoot, workspaceMode: 'per-peer', peerWorkspaces: {}, execution: 'microsandbox' },
+      } })
+      const rpc = async (method: string, token?: string, params: unknown = {}) => {
+        const response = await fetch(app!.rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
+        expect(response.status).toBe(200)
+        return await response.json() as any
+      }
+      for (let i = 0; i < 2; i++) {
+        const visitor = admission === 'public' ? (await rpc('talk2myagent/RegisterPublicVisitor')).result
+          : { visitorId: `visitor-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`, token: `fixture-msb-invited-${i}-token` }
+        if (admission === 'invited') expect((await ipc(app.managementSocket, '/a2a/admin/visitors', process.env['A2A_MSB_LIVE_OWNER'], 'POST',
+          { name: visitor.visitorId, token: visitor.token, trusted: true })).body.applied).toBe(true)
+        visitors.push(visitor)
+        await mkdir(join(privateRoot, visitor.visitorId))
+        await writeFile(join(privateRoot, visitor.visitorId, 'seed.txt'), `PRIVATE_MARKER_${i}`)
+      }
+      const names: string[] = []
+      for (const [i, visitor] of visitors.entries()) {
+        let calls = 0
+        const reads = [{ path: 'info.txt' }, { root: 'workspace', path: 'seed.txt' },
+          { root: 'workspace', path: `../${visitors[1 - i]!.visitorId}/seed.txt` }]
+        app.adapter.stream = async function* (options): AsyncIterable<StreamChunk> {
+          const args = reads[calls++]
+          if (args) {
+            const id = ToolCallId(`public-read-${calls}`), json = JSON.stringify(args)
+            yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+            yield { type: 'tool-call-delta', index: 0, id, name: 'read_file', argumentsDelta: json }
+            yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'read_file', arguments: json } }
+            yield { type: 'finish', reason: { kind: 'tool-calls' } }
+          } else {
+            const transcript = JSON.stringify(options.messages)
+            expect(transcript).toContain('公开资料')
+            expect(transcript).toContain(`PRIVATE_MARKER_${i}`)
+            expect(transcript).not.toContain(`PRIVATE_MARKER_${1 - i}`)
+            expect(transcript).not.toContain('BACKEND_SECRET')
+            yield { type: 'block-start', index: 0, blockType: 'text' }
+            yield { type: 'text-delta', index: 0, text: 'public visitor VM verified' }
+            yield { type: 'block-end', index: 0, block: { type: 'text', text: 'public visitor VM verified' } }
+            yield { type: 'finish', reason: { kind: 'stop' } }
+          }
+        }
+        const reply = await rpc('SendMessage', visitor.token, { message: { messageId: `public-vm-${i}`, role: 'ROLE_USER', parts: [{ text: 'Read files' }] } })
+        expect(reply.result.task.status.state).toBe('TASK_STATE_COMPLETED')
+        expect(JSON.stringify(reply.result.task.artifacts)).toContain('public visitor VM verified')
+        expect(calls).toBe(4)
+        if (admission === 'public') expect((await rpc('talk2myagent/GetPublicVisitorStatus', visitor.token)).result.remainingTurns).toBe(4)
+        names.push(JSON.parse(await readFile(join(privateRoot, '.microsandbox', visitor.visitorId, 'record.json'), 'utf8')).name)
+      }
+      expect(new Set(names).size).toBe(2)
+      expect(await readFile(join(base, 'public/info.txt'), 'utf8')).toBe('PUBLIC\n公开资料')
+    } finally {
+      await app?.stop()
+      const sdk = await loadMicrosandbox(runtime)
+      for (const visitor of visitors) {
+        try {
+          const record = JSON.parse(await readFile(join(privateRoot, '.microsandbox', visitor.visitorId, 'record.json'), 'utf8'))
+          await (await sdk.Sandbox.get(record.name)).destroy({ force: true })
+        } catch (error) { if (!/ENOENT|not found|does not exist|not exist/i.test(String(error))) throw error }
+      }
+      if (oldHome === undefined) delete process.env['A2A_SANDBOX_HOME']; else process.env['A2A_SANDBOX_HOME'] = oldHome
+      if (oldOwner === undefined) delete process.env['A2A_MSB_LIVE_OWNER']; else process.env['A2A_MSB_LIVE_OWNER'] = oldOwner
+    }
+  }, 90_000)
 
   it.skipIf(process.env['A2A_MSB_WALLCLOCK'] !== '1')('uses the real idle timer: 30 seconds pause, 10 minutes stop, files retained', async () => {
     await manager.close()

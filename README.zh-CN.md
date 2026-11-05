@@ -28,13 +28,17 @@ URL 的合规 peer 都能发现这个 agent 并向它提交任务。
 本插件**只做入站**：从不主动连接其他 agent，没有 client、没有 peer 目录、没有 A2A
 subagent provider。它是 `ctx.agents` 之上的传输适配层，不是能力接缝。
 
+## 公开访客（0.4.1）
+
+配套 Portal 可开启默认关闭的「允许公开访客」。统一使用 add/send 直接聊天；首次无 Token 时，技能只在收到明确的“消息未执行、需要匿名登录”指引后登记、保存服务端签发的凭据，再继续原消息。每个身份跨对话、重启累计最多 5 次，由本地服务端检查；用完提示联系 Agent 主人开通权限。这是可选 RPC 扩展，不是浏览器跳转，也不是所有 A2A 客户端自动支持的行为。详见[访客接入体验、额度与凭据保存](docs/public-visitors.md)。受邀访客保持原有权限；开启公开接入后，系统签发的公开身份不受静态 `trustedPeers` 名单限制。
+
 ## 安装
 
 需要本机配置界面或跨网络访问时，先看配套 [Talk2MyAgent 使用说明](https://github.com/huangjuhua-aigc/Talk2MyAgent)。
 访客读取权限、自动简报、主人 IPC 与 Tailscale 部署详见[部署与迁移指南](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-access-hardening.md)。
 
 ```sh
-dsh plugin --profile web add dsh-a2a-server@0.4.0
+dsh plugin --profile web add dsh-a2a-server@0.4.1
 ```
 
 `dsh plugin` 会在 profile 目录里转发给 pnpm，并把这个 bundle 追加进
@@ -59,10 +63,10 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 `dsh-base` 中，因此 `headless` profile 需要先挂载 `@deepseek-ai/dsh-host-webserver`。
 `dsh --profile <name> --dump-config` 可以打印组合出来的配置行。
 
-### 升级到 0.4.0
+### 升级到 0.4.1
 
-0.4.0 适配 DSH `>=0.2.1-rc.2 <0.3.0`。先停止 agent，将
-`dsh-a2a-server@0.4.0` 安装到原有 profile，再重新启动；配套 Portal 也需更新。
+0.4.1 适配 DSH `>=0.2.1-rc.2 <0.3.0`。先停止 agent，将
+`dsh-a2a-server@0.4.1` 安装到原有 profile，再重新启动；配套 Portal 也需更新。
 主人 RPC 和监控已改为需要认证的本机 IPC，公网 HTTP 不接受主人凭据。
 访客可聊天并读取授权目录，其他工具关闭；空白名单 `trustedPeers: []` 拒绝所有访客。
 任务结果与空闲会话在保留期内可跨驱逐和重启恢复。
@@ -71,7 +75,7 @@ dsh plugin --profile web add ./path/to/dsh-a2a-server
 用一个开关控制，完成后直接写入 `.hop/handoff.md`。单独安装协议插件而未配置 `briefing`
 不会自动执行简报任务。
 
-Portal 自动准备 Microsandbox，为每位访客提供独立沙箱。公共资料使用只读副本并排除 `node_modules`，私有文件保存在独立持久磁盘；空闲 30 秒暂停、10 分钟停止。独立 DSH 的旧配置保留原执行模式，安装插件本身不会自动启用 VM。详见[沙箱指南](docs/visitor-isolation.md)和 [0.4.0 发布说明](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.zh-CN.md)。
+Portal 自动准备 Microsandbox，为每位访客提供独立沙箱。公共资料使用只读副本并排除 `node_modules`，私有文件保存在独立持久磁盘；空闲 30 秒暂停、10 分钟停止。独立 DSH 的旧配置保留原执行模式，安装插件本身不会自动启用 VM。详见[沙箱指南](docs/visitor-isolation.md)和 [0.4.1 发布说明](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.zh-CN.md)。
 
 ## 快速开始
 
@@ -412,3 +416,5 @@ pnpm vitest run tests/relay.integration.spec.ts
 ```
 
 测试使用桩模型、临时数据和动态端口，无需 API 密钥或安装 DSH。
+
+公开接入、额度、访客隔离以及真实模型＋本地中继的录屏复跑，见[测试用例与执行说明](docs/test-cases-public-visitors.md)。

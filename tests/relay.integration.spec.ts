@@ -1,22 +1,27 @@
 /** Optional three-repository integration: actual DSH harness, deterministic model, real Relay and Connector. */
 import { it, expect } from 'vitest'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { compose } from '../example/compose.ts'
+import { removeOwned } from '../src/sandbox-files.ts'
 
 it.skipIf(!process.env['A2A_RELAY_SOURCE'] || !process.env['A2A_CONNECTOR_SOURCE'])('runs discovery, authenticated chat, extended card and SSE through Relay against the real DSH transport', async () => {
   // Keep the external services on Node's production loader: Vitest 2's Vite predates node:sqlite.
   const nativeRequire = createRequire(import.meta.url)
   const { createRelay } = nativeRequire(join(process.env['A2A_RELAY_SOURCE']!, 'src/server.mjs'))
   const { Connector } = nativeRequire(join(process.env['A2A_CONNECTOR_SOURCE']!, 'src/connector.mjs'))
-  const root = await mkdtemp(join(tmpdir(), 'dsh-relay-'))
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-relay-')))
+  const publicRoot = join(root, 'public'), clientHome = join(root, 'client')
+  await mkdir(publicRoot)
   process.env['A2A_RELAY_TEST_VISITOR'] = 'test-relay-visitor'
   process.env['A2A_RELAY_TEST_OWNER'] = 'test-relay-owner'
-  const app = await compose({ forceStub: true, workspaceRoot: root, peers: { alice: 'A2A_RELAY_TEST_VISITOR' }, adminTokenEnv: 'A2A_RELAY_TEST_OWNER' })
+  const app = await compose({ forceStub: true, workspaceRoot: publicRoot, peers: { alice: 'A2A_RELAY_TEST_VISITOR' }, adminTokenEnv: 'A2A_RELAY_TEST_OWNER', overrides: { publicVisitors: { enabled: true } } })
   const reserved = createServer(); await new Promise<void>(done => reserved.listen(0, '127.0.0.1', done))
   const address = reserved.address(); if (!address || typeof address === 'string') throw new Error('No port')
   await new Promise<void>(done => reserved.close(() => done()))
@@ -44,9 +49,34 @@ it.skipIf(!process.env['A2A_RELAY_SOURCE'] || !process.env['A2A_CONNECTOR_SOURCE
     const text = await stream.text()
     expect(text).toContain('TASK_STATE_COMPLETED'); expect(text).toContain('真实 DSH 中继测试 🌈')
     expect((await fetch(`${origin}/r/${status['publicationId']}/a2a/admin/contexts`)).status).toBe(404)
+    expect(card.capabilities.extensions[0].description).toContain('RegisterPublicVisitor')
+    const registration = await fetch(status['publicRpcUrl'], { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 'public-join', method: 'talk2myagent/RegisterPublicVisitor', params: {} }) })
+    expect(registration.status).toBe(200); expect(registration.headers.get('cache-control')).toBe('no-store')
+    const visitor = (await registration.json() as any).result
+    expect(visitor.token).toMatch(/^[a-f0-9]{64}$/)
+    const publicReply = await (await rpc('SendMessage', params, visitor.token)).json() as any
+    expect(publicReply.result.task.status.state).toBe('TASK_STATE_COMPLETED')
+    const remaining = await (await rpc('talk2myagent/GetPublicVisitorStatus', {}, visitor.token)).json() as any
+    expect(remaining.result.remainingTurns).toBe(4)
+    // The real calling skill initiates chat, handles the challenge through Relay,
+    // persists its credential, and obeys the actual server's lifetime quota.
+    const cli = (args: string[]) => promisify(execFile)(process.execPath,
+      [join(process.env['A2A_CONNECTOR_SOURCE']!, '../a2a-skill/bin/a2a.mjs'), ...args],
+      { env: { ...process.env, A2A_HOME: clientHome }, windowsHide: true, timeout: 10000 })
+    await cli(['add', 'relay-agent', status['publicRpcUrl']])
+    const first = await cli(['send', 'relay-agent', '匿名登记完整链路'])
+    expect(first.stdout).toContain('匿名登记完整链路')
+    expect(first.stderr).toContain('正在建立匿名访客身份')
+    const contacts = await readFile(join(clientHome, 'contacts.json'), 'utf8')
+    expect(JSON.parse(contacts).agents['relay-agent'].public_visitor).toBe(true)
+    expect(contacts).not.toMatch(/[a-f0-9]{64}/)
+    for (let i = 0; i < 4; i++) await cli(['send', 'relay-agent', '继续聊'])
+    await expect(cli(['send', 'relay-agent', '第六次'])).rejects.toMatchObject({ stderr: expect.stringContaining('请联系这个 Agent 的主人开通访问权限') })
+    expect((await cli(['quota', 'relay-agent'])).stdout).toContain('0/5')
   } finally {
     connector.stop(); await relay.close(); await app.stop()
     delete process.env['A2A_RELAY_TEST_VISITOR']; delete process.env['A2A_RELAY_TEST_OWNER']
-    await rm(root, { recursive: true, force: true })
+    await removeOwned(tmpdir(), root)
   }
-}, 20000)
+}, 30000)

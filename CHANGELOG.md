@@ -2,6 +2,12 @@
 
 [English](CHANGELOG.md) · [简体中文](CHANGELOG.zh-CN.md)
 
+## 0.4.1 (2026-11-05)
+
+- Allow Portal to add invited visitors to a running Agent through authenticated local IPC, without interrupting tasks or changing existing identities. Persist first, acknowledge application, retain only token hashes in the live registry, and preserve per-visitor isolation. Older plugins require one restart after upgrading; editing existing credentials still requires restart.
+- Add opt-in public visitor admission with unique private credentials, isolated contexts/workspaces and five accepted messages per identity across conversations and restarts. Invited peers keep their existing access.
+- Return structured pre-execution authentication challenges and distinct invalid-token, invitation-required and quota-exhausted errors. Clients can register on demand and continue once; the server issues identities, rejects caller-chosen IDs and enforces quotas before model work. Support the Portal's live switch, persist token hashes only, and cap registrations. See the [public visitor/client guide](docs/public-visitors.en.md).
+
 ## 0.4.0 (2026-11-04)
 
 - Exclude nested `node_modules` from Microsandbox public projections without following dependency links or changing host projects. Other links, private imports and Docker mounts remain strictly checked.

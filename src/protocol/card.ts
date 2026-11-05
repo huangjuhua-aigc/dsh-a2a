@@ -20,6 +20,8 @@
 import { A2A_PROTOCOL_VERSION } from './wire.ts'
 import type { A2AAgentCard, A2AAgentSkill } from './wire.ts'
 
+const PUBLIC_VISITOR_EXTENSION = 'https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/docs/public-visitors.md'
+
 /** Everything the card renderer needs from the deployment. */
 export interface CardInput {
   name: string
@@ -39,6 +41,7 @@ export interface CardInput {
   extendedSkills?: A2AAgentSkill[]
   /** Whether the RPC endpoint requires a bearer credential (it always does). */
   authRequired: boolean
+  publicVisitors?: boolean
 }
 
 /** The single skill advertised when a deployment declares none. */
@@ -69,6 +72,8 @@ export function buildAgentCard(input: CardInput): A2AAgentCard {
       streaming: input.streaming,
       pushNotifications: input.pushNotifications,
       extendedAgentCard: (input.extendedSkills ?? []).length > 0,
+      ...(input.publicVisitors ? { extensions: [{ uri: PUBLIC_VISITOR_EXTENSION, required: false,
+        description: 'Send a message normally. A 401 PUBLIC_VISITOR_AUTH_REQUIRED challenge confirms it was not accepted; call talk2myagent/RegisterPublicVisitor on this RPC endpoint, save the issued token, then send the original message. Five messages per visitor identity.' }] } : {}),
     },
     defaultInputModes: ['text/plain'],
     defaultOutputModes: ['text/plain'],
