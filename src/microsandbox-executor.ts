@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Sandbox, SandboxConfig } from 'microsandbox'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { contains, type prepareIsolation, verifyMountTree, PUBLIC_PROJECTION_EXCLUDED_NAMES } from './isolation.ts'
+import { contains, type prepareIsolation, verifyMountTree, PUBLIC_PROJECTION_SOURCE_OPTIONS } from './isolation.ts'
 import { acquireLease, atomicJson, copySafeTree, removeOwned } from './sandbox-files.ts'
 import { VisitorSandboxes, type SandboxDriver, type SandboxVM } from './sandbox-lifecycle.ts'
 import { loadMicrosandbox, MICROSANDBOX_IMAGE, prepareMicrosandbox, type MicrosandboxModule, type PreparedRuntime, type RuntimeOptions } from './microsandbox-runtime.ts'
@@ -125,7 +125,9 @@ export class MicrosandboxDriver implements SandboxDriver<MicrosandboxVM> {
     if (await realpath(p.base) !== p.base) throw new Error('Sandbox data directory changed')
     const temporary = join(p.base, `public-next-${randomUUID()}`)
     try {
-      const digest = await copySafeTree(this.isolation.dataRootFor(peer), temporary, { excludeNames: PUBLIC_PROJECTION_EXCLUDED_NAMES })
+      const digest = await copySafeTree(this.isolation.publicSourceFor(peer), temporary, PUBLIC_PROJECTION_SOURCE_OPTIONS)
+      // Never pass the relaxed source policy to the directory that the VM mounts.
+      await verifyMountTree(temporary)
       const current = await this.record(peer)
       if (current.publicHash === digest) {
         await verifyMountTree(p.public)

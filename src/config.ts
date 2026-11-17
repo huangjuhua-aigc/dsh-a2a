@@ -149,6 +149,8 @@ export interface A2AServerConfig {
   preamble: PreambleConfig
   /** Optional Portal-managed automatic updates; omission leaves the transport inert. */
   briefing?: { settingsFile: string; prompt: string }
+  /** Private Portal connection reference; instructions are owner-authored at startup. */
+  calendar?: { connectionFile: string; instructions: string; mode: 'auto' }
   /**
    * Enables owner RPC and monitoring on private local IPC, never public HTTP.
    */
@@ -201,6 +203,8 @@ export const Config: Schema<A2AServerConfig> = Schema.object({
   })).default({}),
   // An array schema implicitly defaults to []; the wrapper preserves omission.
   publicVisitors: Schema.object({ enabled: Schema.boolean().default(false), settingsFile: Schema.string() }),
+  // TODO: owner_approval requires a durable approval workflow + owner IM notifications.
+  calendar: Schema.object({ connectionFile: Schema.string().default(''), instructions: Schema.string().default(''), mode: Schema.const('auto').default('auto') }),
   trustedPeers: Schema.union([Schema.array(Schema.string())]),
   rateLimitPerMinute: Schema.natural().default(60),
   maxContextTurns: Schema.natural().default(5),

@@ -8,6 +8,7 @@ const temporary = await mkdtemp(join(tmpdir(), 'dsh-a2a-package-'))
 try {
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   await cp(join(root, 'lib'), join(temporary, 'lib'), { recursive: true })
+  for (const name of ['calendar', 'skills']) await cp(join(root, name), join(temporary, name), { recursive: true })
   await writeFile(join(temporary, 'package.json'), JSON.stringify(manifest))
   for (const name of Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })) {
     const target = join(temporary, 'node_modules', name)

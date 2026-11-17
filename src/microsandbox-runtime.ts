@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { access, mkdir, readFile, rename } from 'node:fs/promises'
+import { access, mkdir, readFile, realpath, rename } from 'node:fs/promises'
 import { dirname, join, resolve, delimiter } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -79,6 +79,9 @@ async function prepare(directory: string, progress?: RuntimeOptions['onProgress'
   const report = (phase: PreparationProgress['phase'], message: string) => progress?.({ phase, message })
   report('checking', '正在检查本地沙箱环境…')
   await mkdir(directory, { recursive: true, mode: 0o700 })
+  // Windows TEMP may use an 8.3 alias. Derive every owned child from the
+  // canonical parent so strict cleanup checks compare the same path spelling.
+  directory = await realpath(directory)
   const release = await waitForLease(join(directory, 'prepare.lock'))
   try {
     const install = join(directory, `sdk-${MICROSANDBOX_VERSION}-${process.platform}-${process.arch}`)

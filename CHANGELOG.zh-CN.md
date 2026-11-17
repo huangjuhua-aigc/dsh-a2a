@@ -1,6 +1,18 @@
-# 更新日志
+#- 完成真实 Google Calendar 预约与隐私边界验收，以及 256 项插件测试、16 项日历核心测试和 10 项原生 Microsandbox 测试，详见 [Google 实测报告](docs/test-report-google-calendar-live.md)。
+
+ 更新日志
 
 [English](CHANGELOG.md) · [简体中文](CHANGELOG.zh-CN.md)
+
+## 0.5.0（2026-11-17）
+
+- 兼容飞书在无忙碌日程时省略列表的成功响应；不完整或失败的响应仍禁止预约。已用真实飞书日历验证预约、冲突检查和访客隔离，详见[实测报告](docs/test-report-calendar-live.md)。
+
+- 公共资料源的硬链接按内容复制成独立文件，挂载前严格检查副本；私有工作区导入、实际 VM 挂载目录和 Docker 原目录挂载继续拒绝硬链接。固定主人选定根目录别名的真实路径，防止运行中改指向其他目录。
+
+- 支持主人在 Portal 导入自己的 Google Desktop OAuth 客户端 JSON，按 Agent 加密保存并在重新连接时复用；拒绝 Web 客户端和服务账号，不要求框架预置产品 Client ID。
+
+- 增加主人在 Portal 授权后启用的日历预约技能和四个专用工具，token 加密保存在本机，Agent 直接调用平台，不需要独立授权服务或修改 Relay。预约绑定已认证访客，凭据隔离于可读目录，断开连接后拒绝后续调用。Google/飞书写入主人主日历，使用本机授权与跨进程预约锁；移除企微。详见[配置及验证范围](docs/calendar.md)。
 
 ## 0.4.1（2026-11-05）
 

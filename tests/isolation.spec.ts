@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile, readFile, rm, symlink, link } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile, readFile, rm, symlink, link, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
@@ -100,4 +100,46 @@ it('caps concurrent containers and never falls back to the host reader after ver
   await expect(tool.execute({ path: 'probe.txt' }, context)).rejects.toThrow('isolator unavailable')
   expect(await readFile(join(base, 'public', 'probe.txt'), 'utf8')).toBe('host data')
   reserveContainer()()
+})
+
+it('allows hardlinks only in public copy sources, rejects private aliases and preserves strict Docker mounts', async () => {
+  config.isolation.execution = 'microsandbox'
+  await writeFile(join(base, 'owner.txt'), 'authorized public content')
+  await link(join(base, 'owner.txt'), join(base, 'public/info.txt'))
+  const isolation = await prepareIsolation(config, join(base, 'logs'))
+  await mkdir(isolation.workspaceFor('bob'))
+  await expect(isolation.verifyContainer('bob')).resolves.toBeUndefined()
+  config.isolation.execution = 'docker'
+  await expect(isolation.verifyContainer('bob')).rejects.toThrow('Links')
+  config.isolation.execution = 'microsandbox'
+  await link(join(base, 'owner.txt'), join(isolation.workspaceFor('bob'), 'alias.txt'))
+  await expect(isolation.verifyContainer('bob')).rejects.toThrow('Links')
+})
+
+it('pins an owner-selected root alias but rejects it being redirected after activation', async () => {
+  const root = config.isolation.workspaceRoot, alias = join(base, 'legacy-root')
+  await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  config.isolation.workspaceRoot = alias; config.isolation.execution = 'microsandbox'
+  const isolation = await prepareIsolation(config, join(base, 'logs'))
+  await mkdir(isolation.workspaceFor('bob'))
+  expect(isolation.publicSourceFor('bob')).toBe(await realpath(root))
+  await expect(isolation.verifyContainer('bob')).resolves.toBeUndefined()
+  await rm(alias); await mkdir(join(base, 'other'))
+  await symlink(join(base, 'other'), alias, process.platform === 'win32' ? 'junction' : 'dir')
+  await expect(isolation.verifyContainer('bob')).rejects.toThrow('Public data root changed')
+})
+
+it('startup shared-root reuse still checks every private workspace and never caches across tool calls', async () => {
+  config.isolation.execution = 'microsandbox'
+  const isolation = await prepareIsolation(config, join(base, 'logs'))
+  for (const peer of ['alice', 'bob']) await mkdir(isolation.workspaceFor(peer))
+  await writeFile(join(base, 'outside.txt'), 'HOST_FILE')
+  await link(join(base, 'outside.txt'), join(isolation.workspaceFor('bob'), 'bad-link.txt'))
+  await expect(isolation.verifyContainers(['alice', 'bob'])).rejects.toThrow('Links')
+  await rm(join(isolation.workspaceFor('bob'), 'bad-link.txt'))
+  await isolation.verifyContainers(['alice', 'bob'])
+  await mkdir(join(base, 'outside'))
+  await symlink(join(base, 'outside'), join(base, 'public/new-link'), process.platform === 'win32' ? 'junction' : 'dir')
+  await expect(isolation.verifyContainer('alice')).rejects.toThrow('Links')
+  await expect(isolation.verifyContainers(['alice', 'bob'])).rejects.toThrow('Links')
 })

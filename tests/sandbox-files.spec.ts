@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, writeFile, readFile, link, realpath, rm, symlink, readdir } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, link, realpath, rm, symlink, readdir, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { acquireLease, waitForLease, copySafeTree, removeOwned } from '../src/sandbox-files.ts'
 import { assertMicrosandboxPlatform, runRuntimeCommand } from '../src/microsandbox-runtime.ts'
-import { PUBLIC_PROJECTION_EXCLUDED_NAMES } from '../src/isolation.ts'
+import { PUBLIC_PROJECTION_EXCLUDED_NAMES, PUBLIC_PROJECTION_SOURCE_OPTIONS, verifyMountTree } from '../src/isolation.ts'
 
 describe('managed sandbox files and preparation', () => {
   it('waits for concurrent preparation, retains lock ownership, and times out rather than bypassing it', async () => {
@@ -60,6 +60,35 @@ describe('managed sandbox files and preparation', () => {
       await symlink(outside, join(source, 'other-link'), process.platform === 'win32' ? 'junction' : 'dir')
       await expect(copySafeTree(source, join(base, 'unsafe'), options)).rejects.toThrow('Links')
       expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('changed outside data')
+    } finally { await removeOwned(await realpath(tmpdir()), base) }
+  })
+  it('copies public hardlinks into separate files; writes and deletion never affect their source or sibling copy', async () => {
+    const base = await realpath(await mkdtemp(join(tmpdir(), 'a2a-msb-hardlinks-')))
+    try {
+      const source = join(base, 'source'), copy = join(base, 'copy'), original = join(base, 'original.txt')
+      await mkdir(source); await writeFile(original, 'OWNER_PUBLIC_CONTENT')
+      await link(original, join(source, 'first.txt')); await link(original, join(source, 'second.txt'))
+      expect((await lstat(original)).nlink).toBe(3)
+      const digest = await copySafeTree(source, copy, PUBLIC_PROJECTION_SOURCE_OPTIONS)
+      const first = await lstat(join(copy, 'first.txt')), second = await lstat(join(copy, 'second.txt'))
+      expect(first.nlink).toBe(1); expect(second.nlink).toBe(1)
+      expect(first.ino).not.toBe(second.ino); expect(first.ino).not.toBe((await lstat(original)).ino)
+      await verifyMountTree(copy)
+      await writeFile(join(copy, 'first.txt'), 'CHANGED_COPY')
+      expect(await readFile(join(copy, 'second.txt'), 'utf8')).toBe('OWNER_PUBLIC_CONTENT')
+      await rm(join(copy, 'second.txt'))
+      expect(await readFile(original, 'utf8')).toBe('OWNER_PUBLIC_CONTENT')
+      expect(await readFile(join(source, 'second.txt'), 'utf8')).toBe('OWNER_PUBLIC_CONTENT')
+      await writeFile(original, 'OWNER_UPDATED_CONTENT')
+      expect(await readFile(join(copy, 'first.txt'), 'utf8')).toBe('CHANGED_COPY')
+      expect(await copySafeTree(source, join(base, 'updated'), PUBLIC_PROJECTION_SOURCE_OPTIONS)).not.toBe(digest)
+      // Private imports and raw mounts must never inherit the public source exception.
+      await expect(copySafeTree(source, join(base, 'private-import'))).rejects.toThrow('Links')
+      await expect(verifyMountTree(source)).rejects.toThrow('Links')
+      await expect(copySafeTree(source, join(base, 'too-small'), { ...PUBLIC_PROJECTION_SOURCE_OPTIONS, maxBytes: 1 })).rejects.toThrow('exceeds')
+      await mkdir(join(base, 'outside'))
+      await symlink(join(base, 'outside'), join(source, 'junction'), process.platform === 'win32' ? 'junction' : 'dir')
+      await expect(copySafeTree(source, join(base, 'unsafe'), PUBLIC_PROJECTION_SOURCE_OPTIONS)).rejects.toThrow('Links')
     } finally { await removeOwned(await realpath(tmpdir()), base) }
   })
   it('rejects unsupported machines before downloading or executing anything', () => {

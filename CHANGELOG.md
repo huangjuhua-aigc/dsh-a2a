@@ -1,6 +1,18 @@
-# Changelog
+#- Verified real Google Calendar booking and privacy boundaries, plus 256 plugin tests, 16 calendar core tests and 10 native Microsandbox tests. See the [Google live test report](docs/test-report-google-calendar-live.md).
+
+ Changelog
 
 [English](CHANGELOG.md) · [简体中文](CHANGELOG.zh-CN.md)
+
+## 0.5.0 (2026-11-17)
+
+- Accept Feishu's successful empty free/busy response when the optional list is omitted; malformed responses still block booking. Verified booking, conflict checks and visitor isolation against a real Feishu calendar. See the [live test report](docs/test-report-calendar-live.md).
+
+- Copy hard-linked public source files into independent Microsandbox snapshots. Strict link checks remain on private imports, actual VM mounts and Docker raw mounts. Pin owner-selected root aliases and validate the finished projection before mounting.
+
+- Allow owners to import their own Google Desktop OAuth client JSON in the Portal. Store it encrypted per Agent, preserve it for reconnection, and reject non-Desktop clients. No embedded product Client ID is required.
+
+- Add optional owner-authorized calendar booking through local Portal authorization and direct provider APIs, with a bundled meeting-booking skill and four scoped tools. Bind booking identity to the authenticated visitor, keep credentials outside visitor-readable paths, and disable calls on disconnect. Google/Feishu write to the user primary calendar. Encrypted local tokens, Desktop PKCE/device authorization and cross-process booking locks require no calendar service. WeCom is removed. See [setup and validation limits](docs/calendar.md).
 
 ## 0.4.1 (2026-11-05)
 

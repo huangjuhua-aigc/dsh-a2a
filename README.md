@@ -38,7 +38,7 @@ for visitor permissions, automatic briefings, private owner access and Tailscale
 ## Install
 
 ```sh
-dsh plugin --profile web add dsh-a2a-server@0.4.1
+dsh plugin --profile web add dsh-a2a-server@0.5.0
 ```
 
 `dsh plugin` forwards to pnpm inside the profile directory and appends this
@@ -65,21 +65,21 @@ ships in `dsh-web-app` rather than `dsh-base`, so a `headless` profile needs
 `@deepseek-ai/dsh-host-webserver` mounted before this bundle serves anything.
 `dsh --profile <name> --dump-config` prints the composed rows.
 
-### Upgrading to 0.4.1
+### Upgrading to 0.5.0
 
-Version 0.4.1 requires DSH `>=0.2.1-rc.2 <0.3.0`. Stop the agent, install
-`dsh-a2a-server@0.4.1` into its existing profile, then restart it. Owner RPC and
+Version 0.5.0 requires DSH `>=0.2.1-rc.2 <0.3.0`. Stop the agent, install
+`dsh-a2a-server@0.5.0` into its existing profile, then restart it. Owner RPC and
 monitoring now use authenticated local IPC; update the companion Portal as well.
-Visitors retain chat and scoped workspace reads, while other tools are denied.
+Visitors retain chat and scoped workspace reads. An owner-authorized calendar adds only the four scoped booking tools; other tools remain denied.
 An empty `trustedPeers: []` denies all visitors. Task results persist across
 restart within the configured retention window.
 
 The current [Talk2MyAgent Portal](https://github.com/huangjuhua-aigc/Talk2MyAgent)
 configures default-on hourly briefings with one persistent switch. The plugin
 alone does not enable automatic briefing without its `briefing` configuration.
-Portal automatically prepares Microsandbox for per-visitor isolation. Public data is copied read-only, excluding `node_modules`; private files persist on independent visitor disks. Idle VMs pause after 30 seconds and stop after 10 minutes. Existing standalone configurations keep their selected execution mode; installing the plugin alone does not enable a VM. See the [sandbox guide](docs/visitor-isolation.en.md) and [0.4.1 release notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.md).
+Portal automatically prepares Microsandbox for per-visitor isolation. Public data is copied read-only, excluding `node_modules`; private files persist on independent visitor disks. Idle VMs pause after 30 seconds and stop after 10 minutes. Existing standalone configurations keep their selected execution mode; installing the plugin alone does not enable a VM. See the [sandbox guide](docs/visitor-isolation.en.md) and [0.5.0 release notes](https://github.com/huangjuhua-aigc/dsh-a2a/blob/main/CHANGELOG.md).
 
-### Public visitors (0.4.1)
+### Public visitors (0.4.1+)
 
 The companion Portal can opt into public access, off by default. Clients send normally; an explicit pre-execution 401 challenge lets the updated skill register, save a server-issued credential and continue the original message once. The local server enforces five accepted messages across conversations and restarts, then asks the visitor to contact the owner for access. This is an optional RPC extension, not a redirect or automatic behavior of every A2A client. See the [client flow, quota rules and credential storage](docs/public-visitors.en.md). Existing invited peers retain their access; when public admission is enabled, its issued identities are admitted independently of `trustedPeers`.
 
@@ -472,3 +472,7 @@ pnpm vitest run tests/relay.integration.spec.ts
 It uses a stub model, temporary data and dynamic ports; no API key or DSH install is needed.
 
 For public access, quota and visitor isolation scenarios, including an opt-in real-model local Relay walkthrough and MP4 recording scripts, see the [test matrix and reproduction guide (Chinese)](docs/test-cases-public-visitors.md).
+
+### Calendar booking (0.5.0)
+
+Optional locally authorized Google Calendar and Feishu booking tools with a bundled meeting-booking skill. Portal guides users to import their own Google Desktop client JSON on first connection, then handles consent; visitor tools retain scoped permissions. Client configuration and tokens remain encrypted locally. See [calendar configuration and testing](docs/calendar.md).

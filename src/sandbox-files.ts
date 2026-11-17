@@ -61,16 +61,18 @@ export async function waitForLease(file: string, timeoutMs = 1_200_000): Promise
 }
 
 /** Copy bytes, never host links. A private projection is the only public bind. */
-export async function copySafeTree(source: string, destination: string, options: { maxBytes?: number; maxEntries?: number; excludeNames?: readonly string[] } = {}): Promise<string> {
+export async function copySafeTree(source: string, destination: string, options: { maxBytes?: number; maxEntries?: number; excludeNames?: readonly string[]; allowFileHardLinks?: boolean } = {}): Promise<string> {
   const excluded = new Set(options.excludeNames?.map(name => name.toLowerCase()))
   const root = await realpath(source)
   if ((await lstat(source)).isSymbolicLink()) throw new Error('Data root must not be a link')
   const device = (await lstat(root)).dev
   let bytes = 0, entries = 0
   const digest = createHash('sha256')
+  // Only public source copies opt in. Private imports and final mount checks stay strict.
+  const validLinkCount = (count: number): boolean => options.allowFileHardLinks ? count >= 1 : count === 1
   async function verify(path: string) {
     const stat = await lstat(path)
-    if (stat.isSymbolicLink() || stat.dev !== device || stat.isFile() && stat.nlink !== 1 || !contains(root, await realpath(path))) throw new Error('Links and nested mounts are not allowed in sandbox data')
+    if (stat.isSymbolicLink() || stat.dev !== device || stat.isFile() && !validLinkCount(stat.nlink) || !contains(root, await realpath(path))) throw new Error('Links and nested mounts are not allowed in sandbox data')
     return stat
   }
   async function visit(from: string, to: string): Promise<void> {
@@ -90,7 +92,7 @@ export async function copySafeTree(source: string, destination: string, options:
       const input = await open(from, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
       try {
         const opened = await input.stat()
-        if (opened.ino !== before.ino || opened.dev !== before.dev || opened.nlink !== 1 || !opened.isFile()) throw new Error('Data changed during open')
+        if (opened.ino !== before.ino || opened.dev !== before.dev || !validLinkCount(opened.nlink) || !opened.isFile()) throw new Error('Data changed during open')
         await verify(from)
         const output = await open(to, 'wx', 0o600)
         try {
@@ -104,7 +106,8 @@ export async function copySafeTree(source: string, destination: string, options:
           }
         } finally { await output.close() }
         const after = await verify(from), final = await input.stat()
-        if (after.ino !== opened.ino || after.dev !== opened.dev || after.size !== before.size || after.mtimeMs !== before.mtimeMs || final.nlink !== 1) throw new Error('Data changed during copy; retry')
+        if (after.ino !== opened.ino || after.dev !== opened.dev || after.size !== before.size || after.mtimeMs !== before.mtimeMs
+          || final.size !== before.size || final.mtimeMs !== before.mtimeMs || !validLinkCount(final.nlink)) throw new Error('Data changed during copy; retry')
       } finally { await input.close() }
     } else throw new Error('Special files are not allowed in sandbox data')
     const after = await verify(from)

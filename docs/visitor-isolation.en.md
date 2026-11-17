@@ -21,7 +21,9 @@ Portal installs dsh-a2a-server@^0.4.0 from npm. For local development, build the
 | Other visitors | Not mounted | Separate disks |
 | Sessions, protocol state, credentials | Not mounted | Trusted backend storage |
 
-Public data includes .hop/handoff.md. Before each tool call it is validated and copied; changes stop that visitor VM before replacing its public projection, then restart with the same private disk. Trees are capped at 512 MiB and 100000 entries, so large datasets increase tool latency. Microsandbox public projections exclude entries named node_modules at any depth, case-insensitively, including dependency links. Their contents are never traversed; the original project's dependencies are neither moved nor deleted. Other symlinks, junctions, hard links, special files and nested filesystems remain rejected. Private workspace imports and Docker raw mounts do not use this exclusion and still reject all links.
+Public data includes .hop/handoff.md. Before each tool call it is validated and copied; changes stop that visitor VM before replacing its public projection, then restart with the same private disk. Trees are capped at 512 MiB and 100000 entries, so large datasets increase tool latency. Microsandbox public projections exclude entries named node_modules at any depth, case-insensitively, including dependency links. Their contents are never traversed; the original project's dependencies are neither moved nor deleted.
+
+Regular public source files may have hard links: each is copied by content into a new independent file without preserving the link relationship. Their contents are treated as public data. The completed projection is strictly checked for links before mounting, so changing or deleting a copy cannot change its source. Symlinks/junctions inside the data tree, special files and nested filesystems remain rejected. An owner-selected root alias is pinned to its canonical location at startup; redirecting it later is rejected. Private workspace imports and Docker raw mounts retain the strict policy, including rejection of hard links.
 
 Portal stores VM mappings at ~/.a2a/workspaces/<agent>/.microsandbox/<peer>/record.json and read-only public projections beside them. Existing <peer>/ files are imported on first boot and retained as migration sources. New /work files persist in the virtual disk; they are **not synchronized back to the old host folder**. A generated-file download/export interface has not been added.
 
@@ -46,5 +48,7 @@ Stop the old agent and start with the new Portal. It copies current visitors' le
 Automatic public briefings still update .hop/handoff.md and appear in Portal. Trusted owner maintenance runs on the host, outside the visitor sandbox.
 
 Run pnpm typecheck, pnpm test, pnpm test:package and pnpm test:microsandbox. The last command automatically prepares real microVMs and synthetic files to exercise public mutation denial, private CRUD, peer separation, link attacks, network/credential isolation, cancellation, lifecycle, persistence and abandoned-instance recovery.
+
+Hard-link regression tests verify independent file identities/link counts, host originals unchanged after copy modification/deletion, Python write/append/delete/rename denial on public VM files, writable private copies, and continued rejection of private host hard links and public junctions.
 
 Set A2A_MSB_WALLCLOCK=1 for a full ten-minute wall-clock lifecycle test. Otherwise controlled time triggers actual native VM transitions. A2A_MSB_TEST_RUNTIME optionally reuses a test runtime cache. Legacy Docker validation remains pnpm test:docker and requires a local Linux Docker engine plus the image built from docker/Dockerfile.

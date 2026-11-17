@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile, realpath, symlink, link, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, realpath, symlink, link, rm, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, afterAll, describe, expect, it } from 'vitest'
@@ -28,8 +28,10 @@ describe.skipIf(process.env['A2A_MICROSANDBOX_TEST'] !== '1')('real Microsandbox
     // Reproduce an old build's dependency junction without importing its target into the VM.
     await mkdir(join(publicRoot, 'build'))
     await symlink(join(base, 'backend'), join(publicRoot, 'build/node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
+    const legacyRoot = join(base, 'legacy-public')
+    await symlink(publicRoot, legacyRoot, process.platform === 'win32' ? 'junction' : 'dir')
     const config = Config({ peers: { alice: { tokenEnv: 'ALICE' }, bob: { tokenEnv: 'BOB' } }, isolation: {
-      workspaceRoot: publicRoot, privateRoot, execution: 'microsandbox', peerWorkspaces: {} } } as unknown as A2AServerConfig)
+      workspaceRoot: legacyRoot, privateRoot, execution: 'microsandbox', peerWorkspaces: {} } } as unknown as A2AServerConfig)
     isolation = await prepareIsolation(config, join(base, 'backend'))
     for (const peer of ['alice','bob']) { await mkdir(isolation.workspaceFor(peer)); await writeFile(join(isolation.workspaceFor(peer), 'seed.txt'), peer) }
     runtime = await prepareMicrosandbox({ directory: process.env['A2A_MSB_TEST_RUNTIME'] || join(base, 'runtime'), onProgress: p => console.log(p.message) })
@@ -104,11 +106,40 @@ print(json.dumps({'privateCrud':True,'publicMutationsDenied':denied}))`, [], sig
     expect(await (await reader('alice')).execute({root:'workspace',path:'persist.txt'},context())).toMatchObject({content:'alice retained'})
   },60_000)
 
-  it('rejects host hardlinks and junctions before exposure, including after an existing VM was started', async () => {
-    const alias = join(base,'public/alias.txt')
+  it('copies public hardlinks into independent read-only guest files without changing the host originals', async () => {
+    const original = join(base, 'owner-public.txt'), alias = join(base, 'public/alias.txt'), sibling = join(base, 'public/alias-2.txt')
+    await writeFile(original, 'HARDLINK_PUBLIC_CONTENT'); await link(original, alias); await link(original, sibling)
+    try {
+      const tool = await reader('alice')
+      expect(await tool.execute({path:'alias.txt'},context())).toMatchObject({content:'HARDLINK_PUBLIC_CONTENT'})
+      const projection = join(base, 'private/.microsandbox/alice/public')
+      const a = await lstat(join(projection, 'alias.txt')), b = await lstat(join(projection, 'alias-2.txt'))
+      expect(a.nlink).toBe(1); expect(b.nlink).toBe(1); expect(a.ino).not.toBe(b.ino)
+      expect(a.ino).not.toBe((await lstat(original)).ino)
+      await manager.run('alice', async vm => {
+        const output = await vm.python(`import pathlib,shutil,json
+p=pathlib.Path('/source/alias.txt')
+denied=0
+for fn in [lambda:p.write_text('BAD'),lambda:p.open('a'),lambda:p.unlink(),lambda:p.rename('/source/moved.txt')]:
+ try: fn()
+ except OSError: denied+=1
+assert denied==4,denied
+q=pathlib.Path('/work/copied-public.txt');shutil.copyfile(p,q);q.write_text('PRIVATE_CHANGE');q.unlink()
+assert p.read_text()=='HARDLINK_PUBLIC_CONTENT'
+assert pathlib.Path('/source/alias-2.txt').read_text()=='HARDLINK_PUBLIC_CONTENT'
+print(json.dumps({'denied':denied,'privateCopyIndependent':True}))`, [], signal())
+        expect(JSON.parse(output)).toMatchObject({denied:4,privateCopyIndependent:true})
+      },signal())
+      for (const path of [original,alias,sibling]) expect(await readFile(path,'utf8')).toBe('HARDLINK_PUBLIC_CONTENT')
+      expect((await lstat(original)).nlink).toBe(3)
+    } finally { await rm(alias,{force:true}); await rm(sibling,{force:true}) }
+  },60_000)
+
+  it('rejects private host hardlinks and public junctions even after a VM was started', async () => {
+    const alias = join(isolation.workspaceFor('alice'),'private-alias.txt')
     await link(join(base,'backend/chat.txt'),alias)
-    await expect((await reader('alice')).execute({path:'alias.txt'},context())).rejects.toThrow('Links')
-    await rm(alias)
+    try { await expect((await reader('alice')).execute({root:'workspace',path:'private-alias.txt'},context())).rejects.toThrow('Links') }
+    finally { await rm(alias) }
     const junction=join(base,'public/junction')
     await symlink(join(base,'backend'),junction,process.platform==='win32'?'junction':'dir')
     await expect((await reader('alice')).execute({path:'junction/chat.txt'},context())).rejects.toThrow('Links')

@@ -1,6 +1,6 @@
 {
   "name": "dsh-a2a-server",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Inbound A2A (Agent2Agent) protocol server for DeepSeek Harness: publish an Agent Card and let any A2A-compliant peer submit tasks to a harness agent",
   "keywords": [
     "dsh",
@@ -23,10 +23,13 @@
       "types": "./lib/protocol/index.d.ts",
       "default": "./lib/protocol/index.js"
     },
+    "./calendar": "./calendar/index.mjs",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "skills",
+    "calendar",
     "docker",
     "cordis.patch.yml",
     "README.zh-CN.md",
@@ -34,6 +37,7 @@
     "docs/visitor-isolation.en.md",
     "docs/public-visitors.md",
     "docs/public-visitors.en.md",
+    "docs/calendar.md",
     "CHANGELOG.md",
     "CHANGELOG.zh-CN.md"
   ],
@@ -48,7 +52,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/build-worker.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test tests/calendar-core.test.mjs",
     "test:watch": "vitest",
     "test:docker": "pnpm build && node scripts/test-docker.mjs",
     "test:microsandbox": "pnpm build && node scripts/test-microsandbox.mjs",
@@ -70,6 +74,7 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.5",
+    "@larksuiteoapi/node-sdk": "1.76.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
